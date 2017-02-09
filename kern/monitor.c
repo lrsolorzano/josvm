@@ -26,6 +26,7 @@ struct Command {
 static struct Command commands[] = {
 	{ "help", "Display this list of commands", mon_help },
 	{ "kerninfo", "Display information about the kernel", mon_kerninfo },
+	{ "backtrace", "Display the stack information", mon_backtrace },
 };
 #define NCOMMANDS (sizeof(commands)/sizeof(commands[0]))
 
@@ -61,6 +62,47 @@ int
 mon_backtrace(int argc, char **argv, struct Trapframe *tf)
 {
 	// Your code here.
+	uint64_t rbp, rip, old_rip;
+	uint64_t *pt;
+	struct Ripdebuginfo *dinfo = NULL;
+	int offset;
+
+	cprintf("Stack backtrace:\n");	
+	rbp = read_rbp(); 
+	read_rip(old_rip);
+
+	while (rbp != 0) {
+		pt = (uint64_t *)rbp;
+		rip = *(pt + 1); 
+		debuginfo_rip(old_rip, dinfo);
+		old_rip = rip;
+		
+		// debug info
+		offset = rip - dinfo->rip_fn_addr;
+		cprintf("  rbp %16x  rip %16x\n", rbp, rip);
+		cprintf("       %s:%d: ", dinfo->rip_file, dinfo->rip_line);
+		cprintf("%.*s", dinfo->rip_fn_namelen, dinfo->rip_fn_name);
+		cprintf("+%x  args:%d", offset, dinfo->rip_fn_narg);	
+
+		switch (dinfo->rip_fn_narg) {		
+			case 0:
+				cprintf("\n");
+				break;
+			case 1:
+				cprintf("  %x\n", read_rdi());
+				break;
+			case 2:
+				cprintf("  %x %x\n", read_rdi(), read_rsi());
+				break;
+			case 3:
+				cprintf("  %x %x %x\n", read_rdi(), read_rsi(), read_rdx());
+			default:
+				break;
+		}
+		
+		rbp = *pt;	
+	}
+	
 	return 0;
 }
 
