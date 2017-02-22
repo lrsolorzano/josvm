@@ -277,6 +277,7 @@ x64_vm_init(void)
 	//      (ie. perm = PTE_U | PTE_P)
 	//    - pages itself -- kernel RW, user NONE
 	// Your code goes here:
+	page_insert(PADDR(pml4e))
 
 
 	//////////////////////////////////////////////////////////////////////
@@ -362,7 +363,7 @@ page_init(void)
 //			|| ( physAddr >= PGSIZE && physAddr < npages_basemem * PGSIZE ) //check if     PGSIZE <= physAddr < npages_basemem * PGSIZE
 			|| ( physAddr >= IOPHYSMEM && physAddr < EXTPHYSMEM)
 			|| ( physAddr >= EXTPHYSMEM && physAddr < (PADDR(boot_alloc(0))))  //Reserve space for kernel image and the memory used by boot_alloc
-			|| ( physAddr >= PADDR(KSTACKTOP - KSTKSIZE) && physAddr <= KSTACKTOP ) //Space for kernel stack per the macros mentioned in x64_vm_init
+//			|| ( physAddr >= PADDR(KSTACKTOP - KSTKSIZE) && physAddr <= KSTACKTOP ) //Space for kernel stack per the macros mentioned in x64_vm_init
 			)
 		{
 			continue; 
@@ -478,7 +479,40 @@ page_decref(struct PageInfo* pp)
 pte_t *
 pml4e_walk(pml4e_t *pml4e, const void *va, int create)
 {
-	return NULL;
+	// Get the PML4 entry
+	pml4e_t *e_addr = (pml4e_t *)KADDR(pml4e) + PML4(va);
+	
+	if (*e_addr & PTE_P) { // PDPE page is in memory
+		pdpe_t *pdpe = (pdpe_t *)(PTE_ADDR(*e_addr));
+		return pdpe_walk(pdpe, va, create);
+	}
+	else if (create) { // Create a new PML4 entry
+		// Allocate a new page for the PDPE table  	
+		struct PageInfo *p_info = page_alloc(ALLOC_ZERO);
+
+		if (p_info == NULL) 
+			return NULL;
+		
+		p_info->pp_ref++;
+		physaddr_t pdpe_addr = PTE_ADDR(page2pa(p_info));
+		
+		// Populate the new entry 
+		*e_addr = 0;
+		*e_addr = *e_addr | pdpe_addr;
+		*e_addr = *e_addr | PTE_P | PTE_W | PTE_U;
+		
+		// Walk the PDPE table
+		pte_t *p = pdpe_walk((pdpe_t *)pdpe_addr, va, create);
+
+		if (p == NULL) {
+			p_info->pp_ref--;
+			page_free(p_info);
+		}
+
+		return p;
+	}
+	else 
+		return NULL;
 }
 
 
@@ -487,9 +521,42 @@ pml4e_walk(pml4e_t *pml4e, const void *va, int create)
 // It calls the pgdir_walk which returns the page_table entry pointer.
 // Hints are the same as in pml4e_walk
 pte_t *
-pdpe_walk(pdpe_t *pdpe,const void *va,int create){
+pdpe_walk(pdpe_t *pdpe,const void *va,int create)
+{
+	// Get the PDPE entry
+	pdpe_t *e_addr = (pdpe_t *)KADDR(pdpe) + PDPE(va);
 
-	return NULL;
+	if (*e_addr & PTE_P) { // PDE page is in memory
+		pde_t *pde = (pde_t *)(PTE_ADDR(*e_addr));
+		return pgdir_walk(pde, va, create);
+	}
+	else if (create) { // Create a new PDPE entry
+		// Allocate a new page for the PDE table  	
+		struct PageInfo *p_info = page_alloc(ALLOC_ZERO);
+
+		if (p_info == NULL) 
+			return NULL;
+		
+		p_info->pp_ref++;
+		physaddr_t pde_addr = PTE_ADDR(page2pa(p_info));
+		
+		// Populate the new entry 
+		*e_addr = 0;
+		*e_addr = *e_addr | pde_addr;
+		*e_addr = *e_addr | PTE_P | PTE_W | PTE_U;
+		
+		// Walk the PDE table
+		pte_t *p = pgdir_walk((pde_t *)pde_addr, va, create);
+
+		if (p == NULL) {
+			p_info->pp_ref--;
+			page_free(p_info);
+		}
+
+		return p;
+	}
+	else 
+		return NULL;
 }
 // Given 'pgdir', a pointer to a page directory, pgdir_walk returns
 // a pointer to the page table entry (PTE). 
@@ -499,8 +566,36 @@ pdpe_walk(pdpe_t *pdpe,const void *va,int create){
 pte_t *
 pgdir_walk(pde_t *pgdir, const void *va, int create)
 {
-	// Fill this function in
-	return NULL;
+	// Get the PDE entry
+	pde_t *e_addr = (pde_t *)KADDR(pgdir) + PDX(va);
+	
+	if (*e_addr & PTE_P) { // PTE page is in memory
+		pte_t *pte = (pte_t *)(PTE_ADDR(*e_addr));
+		pte = (pte_t *)KADDR(pte) + PTX(va); // virtual address of the PTE entry
+		return pte;
+	}
+	else if (create) { // Create a new PDE entry
+		// Allocate a new page for the PTE table  	
+		struct PageInfo *p_info = page_alloc(ALLOC_ZERO);
+
+		if (p_info == NULL) 
+			return NULL;
+		
+		p_info->pp_ref++;
+		physaddr_t pte_addr = PTE_ADDR(page2pa(p_info));
+		
+		// Populate the new entry 
+		*e_addr = 0;
+		*e_addr = *e_addr | pte_addr;
+		*e_addr = *e_addr | PTE_P | PTE_W | PTE_U;
+		
+		// Get the PTE entry 
+		pte_t *p = (pte_t *)KADDR(pte_addr) + PTX(va); 
+
+		return p;
+	}
+	else 
+		return NULL;
 }
 
 //
