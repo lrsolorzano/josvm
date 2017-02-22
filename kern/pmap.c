@@ -209,8 +209,10 @@ boot_alloc(uint32_t n)
 	if (!nextfree) {
 		extern char end[];
 		nextfree = ROUNDUP((char *) end, PGSIZE);
+		//cprintf("DEBUG: end is initially %x \n",end);
 	}
 
+	
 	// Allocate a chunk large enough to hold 'n' bytes, then update
 	// nextfree.  Make sure nextfree is kept aligned
 	// to a multiple of PGSIZE.
@@ -268,6 +270,7 @@ x64_vm_init(void)
 	// particular, we can now map memory using boot_map_region or page_insert
 	page_init();
 
+	//check_page_alloc();
 	//////////////////////////////////////////////////////////////////////
 	// Now we set up virtual memory 
 	//////////////////////////////////////////////////////////////////////
@@ -300,6 +303,7 @@ x64_vm_init(void)
 	// Permissions: kernel RW, user NONE
 	// Your code goes here: 
 	// Check that the initial page directory has been set up correctly.
+
 	check_boot_pml4e(boot_pml4e);
 
 	//////////////////////////////////////////////////////////////////////
@@ -353,6 +357,12 @@ page_init(void)
 	// NB: Remember to mark the memory used for initial boot page table i.e (va>=BOOT_PAGE_TABLE_START && va < BOOT_PAGE_TABLE_END) as in-use (not free)
 	size_t i;
 	struct PageInfo* last = NULL;
+	//cprintf("DEBUG: KSTACKTOP is %x  \n",KSTACKTOP);
+	//cprintf("DEBUG: KSTACKSIZE is %x \n", KSTKSIZE);
+	//cprintf("DEBUG: KERNBASE is %x \n", KERNBASE);
+	//cprintf("DEBUG: boot_alloc(0) is %x \n", boot_alloc(0));
+	//cprintf("DEBUG: PADDR(boot_alloc(0) is %x \n",(PADDR(boot_alloc(0)) ));
+	//cprintf("DEBUG: PADDR(BOOT_PAGE_TABLE_START) is %x \n", PADDR(BOOT_PAGE_TABLE_START));
 	for (i = 0; i < npages; i++) {
 		
 		int physAddr = i * PGSIZE;
@@ -360,10 +370,10 @@ page_init(void)
 //Check to see if the page contains reserved data, eg bios, IO hole, etc
 		if (
 			physAddr == 0
-//			|| ( physAddr >= PGSIZE && physAddr < npages_basemem * PGSIZE ) //check if     PGSIZE <= physAddr < npages_basemem * PGSIZE
 			|| ( physAddr >= IOPHYSMEM && physAddr < EXTPHYSMEM)
+			|| ( physAddr >= PADDR(BOOT_PAGE_TABLE_START) && physAddr < PADDR(BOOT_PAGE_TABLE_END))
 			|| ( physAddr >= EXTPHYSMEM && physAddr < (PADDR(boot_alloc(0))))  //Reserve space for kernel image and the memory used by boot_alloc
-//			|| ( physAddr >= PADDR(KSTACKTOP - KSTKSIZE) && physAddr <= KSTACKTOP ) //Space for kernel stack per the macros mentioned in x64_vm_init
+			|| ( physAddr >PADDR(bootstacktop) - KSTKSIZE && physAddr <= PADDR(bootstacktop) ) //Space for kernel stack while it's booting (now). 
 			)
 		{
 			continue; 
@@ -611,7 +621,12 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 static void
 boot_map_region(pml4e_t *pml4e, uintptr_t la, size_t size, physaddr_t pa, int perm)
 {
-	// Fill this function in
+
+
+
+
+
+// Fill this function in
 }
 
 //
@@ -642,7 +657,19 @@ boot_map_region(pml4e_t *pml4e, uintptr_t la, size_t size, physaddr_t pa, int pe
 int
 page_insert(pml4e_t *pml4e, struct PageInfo *pp, void *va, int perm)
 {
-	// Fill this function in
+		
+
+	//Double check the permissioning later
+	pte_t * pte = pml4e_walk(pml4e,va,  perm|PTE_P);
+
+	//Should remove entry if it already exists and invalidate TLB accordingly
+	page_remove(pml4e, va);
+	
+	*pte = page2pa(pp);
+	
+	
+
+// Fill this function in
 	return 0;
 }
 
@@ -660,8 +687,25 @@ page_insert(pml4e_t *pml4e, struct PageInfo *pp, void *va, int perm)
 struct PageInfo *
 page_lookup(pml4e_t *pml4e, void *va, pte_t **pte_store)
 {
-	// Fill this function in
-	return NULL;
+
+	pte_t * pageTableEntry = pml4e_walk(pml4e ,va ,0);
+
+	if (pageTableEntry == NULL)
+		return NULL;
+	else {
+
+		if (pte_store == NULL) {
+			//Take the page table entry (which is a ptr to the page containing va)
+			// and use it to return a pageInfo struct produced by pa2page.
+			return pa2page(*pageTableEntry);
+		}
+		else {
+			//Questionable
+			pageTableEntry = *pte_store;
+			return pa2page(*pageTableEntry);
+		}
+	}
+
 }
 
 //
@@ -682,7 +726,26 @@ page_lookup(pml4e_t *pml4e, void *va, pte_t **pte_store)
 void
 page_remove(pml4e_t *pml4e, void *va)
 {
-	// Fill this function in
+
+	struct PageInfo * pgInfo = (page_lookup(pml4e, va, NULL));
+
+	if (pgInfo == NULL)
+		return;
+	
+	pgInfo->pp_ref = pgInfo->pp_ref -1;
+	if (pgInfo->pp_ref == 0) {
+		
+		pgInfo->pp_link = NULL;
+		page_free (pgInfo);
+		
+		
+	}
+	pte_t * nullPtr =  NULL;
+		
+	page_lookup(pml4e, va, &nullPtr);
+	tlb_invalidate(pml4e,va);
+	
+
 }
 
 //
@@ -863,10 +926,13 @@ check_boot_pml4e(pml4e_t *pml4e)
 	// check pages array
 	n = ROUNDUP(npages*sizeof(struct PageInfo), PGSIZE);
 	for (i = 0; i < n; i += PGSIZE) {
-		// cprintf("%x %x %x\n",i,check_va2pa(pml4e, UPAGES + i), PADDR(pages) + i);
+		//cprintf (" pml4e is %x  \nAND UPAGES + i is   %x \n", pml4e, UPAGES + i);
+		//cprintf("check_va2pa(pml4e, UPAGES + i) is %x   \n  AND  PADDR(pages) + is  %x %x\n",i,check_va2pa(pml4e, UPAGES + i), PADDR(pages) + i);
+		
 		assert(check_va2pa(pml4e, UPAGES + i) == PADDR(pages) + i);
 	}
 
+	
 
 	// check phys mem
 	for (i = 0; i < npages * PGSIZE; i += PGSIZE)
@@ -912,17 +978,18 @@ check_va2pa(pml4e_t *pml4e, uintptr_t va)
 	pte_t *pte;
 	pdpe_t *pdpe;
 	pde_t *pde;
-	// cprintf("%x", va);
+	//cprintf("DEBUG va2pa: \n \n \n");
+	//cprintf(" va is \n %x", va);
 	pml4e = &pml4e[PML4(va)];
-	// cprintf(" %x %x " , PML4(va), *pml4e);
+	//cprintf("PML4(va) is %x \n *pml42 is %x \n " , PML4(va), *pml4e);
 	if(!(*pml4e & PTE_P))
 		return ~0;
 	pdpe = (pdpe_t *) KADDR(PTE_ADDR(*pml4e));
-	// cprintf(" %x %x " , pdpe, *pdpe);
+	//cprintf(" %x %x " , pdpe, *pdpe);
 	if (!(pdpe[PDPE(va)] & PTE_P))
 		return ~0;
 	pde = (pde_t *) KADDR(PTE_ADDR(pdpe[PDPE(va)]));
-	// cprintf(" %x %x " , pde, *pde);
+	//cprintf(" %x %x " , pde, *pde);
 	pde = &pde[PDX(va)];
 	if (!(*pde & PTE_P))
 		return ~0;
