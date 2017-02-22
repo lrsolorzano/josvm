@@ -660,16 +660,27 @@ page_insert(pml4e_t *pml4e, struct PageInfo *pp, void *va, int perm)
 		
 
 	//Double check the permissioning later
-	pte_t * pte = pml4e_walk(pml4e,va,  perm|PTE_P);
+	pte_t *pte = pml4e_walk(pml4e, va,  1);
+	physaddr_t pte_addr = PTE_ADDR(page2pa(pp));
+	
+	if (pte == NULL)
+		return -E_NO_MEM;
+	
+	// Already a page exist at 'va'
+	if (*pte & PET_P) {
+		if (PTE_ADDR(*pte) == pte_addr) { // page re-inserted to the same va
+			*pte = *pte | perm | PTE_P;
+			tlb_invalidate(pml4e, va);
+			return 0;
+		}
 
-	//Should remove entry if it already exists and invalidate TLB accordingly
-	page_remove(pml4e, va);
+		page_remove(pml4e, va);
+	}
 	
-	*pte = page2pa(pp);
+	// Fill the entry with physical address and permission
+	*pte = *pte | pte_addr | perm | PTE_P;
+	pp->pp_ref++;
 	
-	
-
-// Fill this function in
 	return 0;
 }
 
@@ -688,24 +699,16 @@ struct PageInfo *
 page_lookup(pml4e_t *pml4e, void *va, pte_t **pte_store)
 {
 
-	pte_t * pageTableEntry = pml4e_walk(pml4e ,va ,0);
+	pte_t *pte = pml4e_walk(pml4e ,va ,0);
 
-	if (pageTableEntry == NULL)
+	// pte is NULL or pte entry haven't been populated yet
+	if (pte == NULL || !(*pte & PTE_P))
 		return NULL;
-	else {
 
-		if (pte_store == NULL) {
-			//Take the page table entry (which is a ptr to the page containing va)
-			// and use it to return a pageInfo struct produced by pa2page.
-			return pa2page(*pageTableEntry);
-		}
-		else {
-			//Questionable
-			pageTableEntry = *pte_store;
-			return pa2page(*pageTableEntry);
-		}
-	}
+	if (pte_store != NULL) 
+		*pte_store = pte;
 
+	return pa2page(PTE_ADDR(*pte));
 }
 
 //
@@ -726,26 +729,24 @@ page_lookup(pml4e_t *pml4e, void *va, pte_t **pte_store)
 void
 page_remove(pml4e_t *pml4e, void *va)
 {
-
-	struct PageInfo * pgInfo = (page_lookup(pml4e, va, NULL));
+	pte_t *pte = NULL;
+	struct PageInfo * pgInfo = page_lookup(pml4e, va, &pte);
 
 	if (pgInfo == NULL)
 		return;
 	
 	pgInfo->pp_ref = pgInfo->pp_ref -1;
 	if (pgInfo->pp_ref == 0) {
-		
 		pgInfo->pp_link = NULL;
 		page_free (pgInfo);
-		
-		
 	}
-	pte_t * nullPtr =  NULL;
-		
-	page_lookup(pml4e, va, &nullPtr);
-	tlb_invalidate(pml4e,va);
 	
-
+	// clear the pte entry
+	if (pte != NULL)
+		*pte = 0;
+		
+	// shoot the tlb
+	tlb_invalidate(pml4e,va);
 }
 
 //
