@@ -262,6 +262,8 @@ x64_vm_init(void)
 	// array.  'npages' is the number of physical pages in memory.
 	// Your code goes here:
 	pages = (struct PageInfo*)boot_alloc(npages * sizeof(struct PageInfo));
+// 	The size of this array is 1MB
+//	cprintf("%d\n", npages * sizeof(struct PageInfo));
 
 	//////////////////////////////////////////////////////////////////////
 	// Now that we've allocated the initial kernel data structures, we set
@@ -280,8 +282,18 @@ x64_vm_init(void)
 	//      (ie. perm = PTE_U | PTE_P)
 	//    - pages itself -- kernel RW, user NONE
 	// Your code goes here:
-	page_insert(PADDR(pml4e))
+	
+	// The array of PageInfo struct spans several physical pages
+	physaddr_t phy_addr = PADDR(pages);
+	void *vir_addr = (void*)UPAGES; 
+	int i;
 
+	for (i = 0; i < npages * sizeof(struct PageInfo) / PGSIZE; i++) {
+		page_insert((pml4e_t *)PADDR(pml4e), 
+			(struct PageInfo*)pa2page(phy_addr), vir_addr, PTE_U | PTE_P);
+		phy_addr = phy_addr + PGSIZE;
+		vir_addr = vir_addr + PGSIZE;
+	}
 
 	//////////////////////////////////////////////////////////////////////
 	// Use the physical memory that 'bootstack' refers to as the kernel
@@ -294,6 +306,15 @@ x64_vm_init(void)
 	//       overwrite memory.  Known as a "guard page".
 	//     Permissions: kernel RW, user NONE
 	// Your code goes here:
+	phy_addr = PADDR(bootstack);
+	vir_addr = (void*)(KSTACKTOP - KSTKSIZE);
+	
+	for (i = 0; i < KSTKSIZE / PGSIZE; i++) {
+		page_insert((pml4e_t *)PADDR(pml4e), 
+			(struct PageInfo*)pa2page(phy_addr), vir_addr, PTE_W | PTE_P);
+		phy_addr = phy_addr + PGSIZE;
+		vir_addr = vir_addr + PGSIZE;
+	}
 
 	//////////////////////////////////////////////////////////////////////
 	// Map all of physical memory at KERNBASE. We have detected the number
@@ -490,7 +511,7 @@ pte_t *
 pml4e_walk(pml4e_t *pml4e, const void *va, int create)
 {
 	// Get the PML4 entry
-	pml4e_t *e_addr = (pml4e_t *)KADDR(pml4e) + PML4(va);
+	pml4e_t *e_addr = (pml4e_t *)KADDR((physaddr_t)pml4e) + PML4(va);
 	
 	if (*e_addr & PTE_P) { // PDPE page is in memory
 		pdpe_t *pdpe = (pdpe_t *)(PTE_ADDR(*e_addr));
@@ -534,7 +555,7 @@ pte_t *
 pdpe_walk(pdpe_t *pdpe,const void *va,int create)
 {
 	// Get the PDPE entry
-	pdpe_t *e_addr = (pdpe_t *)KADDR(pdpe) + PDPE(va);
+	pdpe_t *e_addr = (pdpe_t *)KADDR((physaddr_t)pdpe) + PDPE(va);
 
 	if (*e_addr & PTE_P) { // PDE page is in memory
 		pde_t *pde = (pde_t *)(PTE_ADDR(*e_addr));
@@ -577,11 +598,11 @@ pte_t *
 pgdir_walk(pde_t *pgdir, const void *va, int create)
 {
 	// Get the PDE entry
-	pde_t *e_addr = (pde_t *)KADDR(pgdir) + PDX(va);
+	pde_t *e_addr = (pde_t *)KADDR((physaddr_t)pgdir) + PDX(va);
 	
 	if (*e_addr & PTE_P) { // PTE page is in memory
 		pte_t *pte = (pte_t *)(PTE_ADDR(*e_addr));
-		pte = (pte_t *)KADDR(pte) + PTX(va); // virtual address of the PTE entry
+		pte = (pte_t *)KADDR((physaddr_t)pte) + PTX(va); // virtual address of the PTE entry
 		return pte;
 	}
 	else if (create) { // Create a new PDE entry
@@ -667,7 +688,7 @@ page_insert(pml4e_t *pml4e, struct PageInfo *pp, void *va, int perm)
 		return -E_NO_MEM;
 	
 	// Already a page exist at 'va'
-	if (*pte & PET_P) {
+	if (*pte & PTE_P) {
 		if (PTE_ADDR(*pte) == pte_addr) { // page re-inserted to the same va
 			*pte = *pte | perm | PTE_P;
 			tlb_invalidate(pml4e, va);
