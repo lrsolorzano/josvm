@@ -325,13 +325,15 @@ x64_vm_init(void)
 	// Your code goes here: 
 	// Check that the initial page directory has been set up correctly.
 
+	boot_map_region(pml4e,KERNBASE, (npages)*PGSIZE, 0, 0);
+	
 	check_boot_pml4e(boot_pml4e);
 
 	//////////////////////////////////////////////////////////////////////
 	// Permissions: kernel RW, user NONE
 	pdpe_t *pdpe = KADDR(PTE_ADDR(pml4e[1]));
 	pde_t *pgdir = KADDR(PTE_ADDR(pdpe[0]));
-	lcr3(boot_cr3);
+	//lcr3(boot_cr3);
 
 	check_page_free_list(1);
 	check_page_alloc();
@@ -510,40 +512,47 @@ page_decref(struct PageInfo* pp)
 pte_t *
 pml4e_walk(pml4e_t *pml4e, const void *va, int create)
 {
-	// Get the PML4 entry
-	pml4e_t *e_addr = (pml4e_t *)KADDR((physaddr_t)pml4e) + PML4(va);
-	
-	if (*e_addr & PTE_P) { // PDPE page is in memory
-		pdpe_t *pdpe = (pdpe_t *)(PTE_ADDR(*e_addr));
-		return pdpe_walk(pdpe, va, create);
-	}
-	else if (create) { // Create a new PML4 entry
-		// Allocate a new page for the PDPE table  	
-		struct PageInfo *p_info = page_alloc(ALLOC_ZERO);
 
-		if (p_info == NULL) 
-			return NULL;
-		
-		p_info->pp_ref++;
-		physaddr_t pdpe_addr = PTE_ADDR(page2pa(p_info));
-		
-		// Populate the new entry 
-		*e_addr = 0;
-		*e_addr = *e_addr | pdpe_addr;
-		*e_addr = *e_addr | PTE_P | PTE_W | PTE_U;
-		
-		// Walk the PDPE table
-		pte_t *p = pdpe_walk((pdpe_t *)pdpe_addr, va, create);
+    pml4e_t *e_addr = (pml4e_t *)((physaddr_t)pml4e) + PML4(va);  //NEW
+    //cprintf("pml4e entry address is %x  \n", e_addr);
+   
+    if (*e_addr & PTE_P) { // PDPE page is in memory
+        pdpe_t *pdpe = (pdpe_t *)(PTE_ADDR(*e_addr));
+        return pdpe_walk(pdpe, va, create);
+    }
+    else if (create) { // Create a new PML4 entry
+        // Allocate a new page for the PDPE table     
+        struct PageInfo *p_info = page_alloc(ALLOC_ZERO);
+       
+        if (p_info == NULL)
+            return NULL;
+       
+        p_info->pp_ref++;
+        physaddr_t pdpe_addr = PTE_ADDR(page2pa(p_info));
+       
+        // Populate the new entry
+        *e_addr = 0;
+        *e_addr = *e_addr | pdpe_addr;
+        *e_addr = *e_addr | PTE_P | PTE_W | PTE_U;
 
-		if (p == NULL) {
-			p_info->pp_ref--;
-			page_free(p_info);
-		}
+        //cprintf("pml4e entry address value is %x \n",*e_addr);
+       
+        //cprintf("pdpe phys address is %x \n",pdpe_addr);
+       
+        // Walk the PDPE table
+        pte_t *p = pdpe_walk((pdpe_t *)pdpe_addr, va, create);
 
-		return p;
-	}
-	else 
-		return NULL;
+       
+        if (p == NULL) {
+            p_info->pp_ref--;
+            page_free(p_info);
+            *e_addr = 0; // NEW
+        }
+
+        return p;
+    }
+    else
+        return NULL;
 }
 
 
@@ -639,17 +648,24 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 // mapped pages.
 //
 // Hint: the TA solution uses pml4e_walk
+
+
 static void
 boot_map_region(pml4e_t *pml4e, uintptr_t la, size_t size, physaddr_t pa, int perm)
 {
-
-
-
-
-
-// Fill this function in
+	//check permissioning
+	uint64_t numPages = size/PGSIZE;
+	
+        for (uint64_t i = 0; i < numPages; i++) {
+		uint64_t offset = i * PGSIZE;
+		void * virtAddress = (void *) (((uint64_t) la) + offset);
+		pte_t * pageTabEntry  = pml4e_walk(pml4e,virtAddress, 1);
+		
+		*pageTabEntry = pa + offset;
+		*pageTabEntry = *pageTabEntry | perm | PTE_P;
+	}
+	
 }
-
 //
 // Map the physical page 'pp' at virtual address 'va'.
 // The permissions (the low 12 bits) of the page table entry
