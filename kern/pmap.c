@@ -325,7 +325,8 @@ x64_vm_init(void)
 	// Your code goes here: 
 	// Check that the initial page directory has been set up correctly.
 
-	boot_map_region(pml4e,KERNBASE, (npages)*PGSIZE, 0, 0);
+	// Need to set permission bit PTE_W, so the kernel has read and write permission
+	boot_map_region(pml4e,KERNBASE, (npages)*PGSIZE, 0, PTE_W);
 	
 	check_boot_pml4e(boot_pml4e);
 
@@ -333,7 +334,7 @@ x64_vm_init(void)
 	// Permissions: kernel RW, user NONE
 	pdpe_t *pdpe = KADDR(PTE_ADDR(pml4e[1]));
 	pde_t *pgdir = KADDR(PTE_ADDR(pdpe[0]));
-	//lcr3(boot_cr3);
+	lcr3(boot_cr3);
 
 	check_page_free_list(1);
 	check_page_alloc();
@@ -591,6 +592,7 @@ pdpe_walk(pdpe_t *pdpe,const void *va,int create)
 		if (p == NULL) {
 			p_info->pp_ref--;
 			page_free(p_info);
+			*e_addr = 0;
 		}
 
 		return p;
@@ -655,16 +657,18 @@ boot_map_region(pml4e_t *pml4e, uintptr_t la, size_t size, physaddr_t pa, int pe
 {
 	//check permissioning
 	uint64_t numPages = size/PGSIZE;
+	int i;
 	
-        for (uint64_t i = 0; i < numPages; i++) {
+        for (i = 0; i < numPages; i++) {
 		uint64_t offset = i * PGSIZE;
 		void * virtAddress = (void *) (((uint64_t) la) + offset);
 		pte_t * pageTabEntry  = pml4e_walk(pml4e,virtAddress, 1);
 		
-		*pageTabEntry = pa + offset;
-		*pageTabEntry = *pageTabEntry | perm | PTE_P;
+		if (pageTabEntry != NULL) {
+			*pageTabEntry = pa + offset;
+			*pageTabEntry = *pageTabEntry | perm | PTE_P;
+		}
 	}
-	
 }
 //
 // Map the physical page 'pp' at virtual address 'va'.
