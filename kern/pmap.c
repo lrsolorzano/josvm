@@ -276,6 +276,45 @@ x64_vm_init(void)
 	// particular, we can now map memory using boot_map_region or page_insert
 	page_init();
 
+	uint64_t envsSize = (sizeof(struct Env)) * (NENV);
+
+	uint64_t envsPages = ROUNDUP(envsSize,PGSIZE)/PGSIZE;
+
+	//This is kind of tricky.  Basically we need to alloc all of the pages
+	//for the env structs before we call page_insert for the first time.
+//Unfortunately, the tests in check_boot_pml4e require the physical addresses
+	//for the virtual env addresses to be contiguous (PADDR(UENVS) +i), and the first call to page_insert
+	//allocs a couple of pages when you do the pml4e walk for the lower page
+	//table directories.
+
+	//We'll need to check the permissioning down below too.
+	
+	struct PageInfo * initPage;
+	for (int i = 0; i < envsPages; i++) {
+		if (i ==0) {
+			initPage = page_alloc(0);
+		}
+		else {
+			page_alloc(0);
+		}
+		initPage->pp_ref++;
+	}
+
+	struct PageInfo * currPage = initPage;
+	for (int i = 0; i < envsPages; i++) {
+		
+		page_insert((pml4e_t *)PADDR(pml4e), currPage, (void *)(UENVS + i * PGSIZE), PTE_U );
+
+		currPage++;
+		//cprintf(" \n pml4e addr is %x \n", (pml4e_t *)PADDR(pml4e));
+	}
+
+	physaddr_t physAdd = check_va2pa(pml4e, UENVS);
+
+	envs = ((void *) physAdd + KERNBASE);
+	//cprintf(" \n envs is %x \n", envs);
+	
+	
 	//check_page_alloc();
 	//////////////////////////////////////////////////////////////////////
 	// Now we set up virtual memory 
@@ -341,7 +380,7 @@ x64_vm_init(void)
 	boot_map_region(pml4e,KERNBASE, (npages)*PGSIZE, 0, PTE_W);
 	
 	check_boot_pml4e(boot_pml4e);
-
+	
 	//////////////////////////////////////////////////////////////////////
 	// Permissions: kernel RW, user NONE
 	pdpe_t *pdpe = KADDR(PTE_ADDR(pml4e[1]));
@@ -393,12 +432,14 @@ page_init(void)
 	// NB: Remember to mark the memory used for initial boot page table i.e (va>=BOOT_PAGE_TABLE_START && va < BOOT_PAGE_TABLE_END) as in-use (not free)
 	size_t i;
 	struct PageInfo* last = NULL;
+	//cprintf("DEBUG: IOPHYSMEM is %x \n ", IOPHYSMEM);
 	//cprintf("DEBUG: KSTACKTOP is %x  \n",KSTACKTOP);
 	//cprintf("DEBUG: KSTACKSIZE is %x \n", KSTKSIZE);
 	//cprintf("DEBUG: KERNBASE is %x \n", KERNBASE);
 	//cprintf("DEBUG: boot_alloc(0) is %x \n", boot_alloc(0));
 	//cprintf("DEBUG: PADDR(boot_alloc(0) is %x \n",(PADDR(boot_alloc(0)) ));
 	//cprintf("DEBUG: PADDR(BOOT_PAGE_TABLE_START) is %x \n", PADDR(BOOT_PAGE_TABLE_START));
+	//cprintf("DEBUG: PADDR(bootstacktop) - KSTKSIZE is %x \n",PADDR(bootstacktop) - KSTKSIZE);
 	for (i = 0; i < npages; i++) {
 		
 		int physAddr = i * PGSIZE;
@@ -423,6 +464,7 @@ page_init(void)
 		else
 			page_free_list = &pages[i];
 		last = &pages[i];
+		//	cprintf("page_init called on i %d \n",i);
 	}
 }
 
@@ -1033,8 +1075,11 @@ check_boot_pml4e(pml4e_t *pml4e)
 
 	// check envs array (new test for lab 3)
 	n = ROUNDUP(NENV*sizeof(struct Env), PGSIZE);
-	for (i = 0; i < n; i += PGSIZE)
+	for (i = 0; i < n; i += PGSIZE) {
+		//cprintf(" \n %d  %x %x \n ",i,check_va2pa(pml4e, UENVS + i),PADDR(envs) + i);
 		assert(check_va2pa(pml4e, UENVS + i) == PADDR(envs) + i);
+		
+	}
 	
 	// check phys mem
 	for (i = 0; i < npages * PGSIZE; i += PGSIZE)

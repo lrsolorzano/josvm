@@ -120,7 +120,23 @@ env_init(void)
 {
 	// Set up envs array
 	// LAB 3: Your code here.
+	struct Env * last = NULL;
+	
+	
+	for (int i =0; i < NENV; i++) {
+		envs[i].env_id = 0;
+		envs[i].env_status = ENV_FREE;
 
+		envs[i].env_link = NULL;
+		
+		//Similar to free page setup in pmap.c
+		
+		if (last)
+			last->env_link = &envs[i];
+		else
+			env_free_list = &envs[i];
+		last = &envs[i];
+	}
 	// Per-CPU part of the initialization
 	env_init_percpu();
 }
@@ -168,6 +184,16 @@ env_setup_vm(struct Env *e)
 	if (!(p = page_alloc(0)))
 		return -E_NO_MEM;
 
+	p->pp_ref++;
+	e->env_pml4e = page2kva(p);
+
+	for ( i = PML4(UTOP); i < 512; i++) {
+		*((e->env_pml4e) +i) = *(boot_pml4e + i); 
+	}
+
+
+	
+	
 	// Now, set e->env_pml4e and initialize the page directory.
 	//
 	// Hint:
@@ -270,7 +296,22 @@ region_alloc(struct Env *e, void *va, size_t len)
 {
 	// LAB 3: Your code here.
 	// (But only if you need it for load_icode.)
-	//
+
+	//Need to add panic behavior
+	
+	uint64_t roundedLen = (uint64_t) ROUNDUP(len,PGSIZE);
+
+	uint64_t roundedVa = (uint64_t) ROUNDDOWN(va,PGSIZE);
+
+	for (uint64_t i = roundedVa; i < roundedVa + roundedLen; i+= PGSIZE) {
+		struct PageInfo * currPage = page_alloc(0);
+		currPage->pp_ref++;
+
+		page_insert((pml4e_t *)PADDR(e->env_pml4e),currPage, (void *)i, PTE_U| PTE_W);
+		
+	}
+	
+	
 	// Hint: It is easier to use region_alloc if the caller can pass
 	//   'va' and 'len' values that are not page-aligned.
 	//   You should round va down, and round (va + len) up.
@@ -314,7 +355,10 @@ load_icode(struct Env *e, uint8_t *binary)
 	//  (The ELF header should have ph->p_filesz <= ph->p_memsz.)
 	//  Use functions from the previous lab to allocate and map pages.
 	//
-	//  All page protection bits should be user read/write for now.
+
+	
+	
+//  All page protection bits should be user read/write for now.
 	//  ELF segments are not necessarily page-aligned, but you can
 	//  assume for this function that no two segments will touch
 	//  the same virtual page.
@@ -336,6 +380,36 @@ load_icode(struct Env *e, uint8_t *binary)
 
 	// LAB 3: Your code here.
 	e->elf = binary;
+
+
+	struct Elf * theElf = (struct Elf *) binary;
+
+	if (theElf->e_magic!= ELF_MAGIC)
+		cprintf("\n\n\n Can't load Elf !!! \n\n\n)");
+
+	struct Proghdr * ph = (struct Proghdr *)((uint8_t *) theElf + theElf->e_phoff);
+	struct Proghdr * eph = ph +theElf->e_phnum;
+	
+	for (; ph < eph; ph++) {
+		
+		region_alloc(e, (void *) ph->p_va, ph->p_memsz);
+		if ( ph->p_type == ELF_PROG_LOAD) {
+			//address to load into
+			uint8_t * cursor = (uint8_t *) ph->p_va;
+
+			//address to load from
+			uint8_t * index = (uint8_t *) ph->p_offset;
+			
+			//number of bytes to load
+			uint64_t numBytes = ph->p_memsz;
+			
+			for (int i = 0;i < numBytes; i++) {
+				*(cursor+i) = *(index +i);	
+			}
+		}
+		
+	}
+	
 }
 
 //
@@ -349,6 +423,18 @@ void
 env_create(uint8_t *binary, enum EnvType type)
 {
 	// LAB 3: Your code here.
+	struct Env ** newEnvPtr;
+	struct Env * nullPtr = NULL;
+
+	newEnvPtr = &nullPtr;
+	
+	env_alloc(newEnvPtr,0);
+
+	struct Env * theEnv = *newEnvPtr;
+	theEnv->env_type = type;
+
+	load_icode(theEnv, binary);
+	
 }
 
 //
@@ -466,7 +552,11 @@ env_pop_tf(struct Trapframe *tf)
 void
 env_run(struct Env *e)
 {
-	// Step 1: If this is a context switch (a new environment is running):
+
+
+
+
+// Step 1: If this is a context switch (a new environment is running):
 	//	   1. Set the current environment (if any) back to
 	//	      ENV_RUNNABLE if it is ENV_RUNNING (think about
 	//	      what other states it can be in),
@@ -474,10 +564,15 @@ env_run(struct Env *e)
 	//	   3. Set its status to ENV_RUNNING,
 	//	   4. Update its 'env_runs' counter,
 	//	   5. Use lcr3() to switch to its address space.
-	// Step 2: Use env_pop_tf() to restore the environment's
+
+	
+	
+	
+	
+// Step 2: Use env_pop_tf() to restore the environment's
 	//	   registers and drop into user mode in the
 	//	   environment.
-
+	
 	// Hint: This function loads the new environment's state from
 	//	e->env_tf.  Go back through the code you wrote above
 	//	and make sure you have set the relevant parts of
@@ -485,6 +580,21 @@ env_run(struct Env *e)
 
 	// LAB 3: Your code here.
 
-	panic("env_run not yet implemented");
+	if (curenv) 
+		curenv->env_status = ENV_RUNNABLE;
+	
+	curenv = e;
+
+	curenv->env_status = ENV_RUNNING;
+
+	curenv->env_runs++;
+
+	lcr3((uint64_t)KADDR( (uint64_t)e->env_pml4e));
+
+	struct Trapframe * tf = &(curenv->env_tf);
+	
+	env_pop_tf(tf);
+	
+	//panic("env_run not yet implemented");
 }
 
