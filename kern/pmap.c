@@ -244,7 +244,7 @@ x64_vm_init(void)
 	pml4e_t* pml4e;
 	uint32_t cr0;
 	uint64_t n;
-	int r;
+	int r, i;
 	struct Env *env;
 	i386_detect_memory();
 	//panic("i386_vm_init: This function is not finished\n");
@@ -290,20 +290,21 @@ x64_vm_init(void)
 	//We'll need to check the permissioning down below too.
 	
 	struct PageInfo * initPage;
-	for (int i = 0; i < envsPages; i++) {
+	for (i = 0; i < envsPages; i++) {
 		if (i ==0) {
 			initPage = page_alloc(0);
 		}
 		else {
 			page_alloc(0);
 		}
+		// why increase the reference every loop?
 		initPage->pp_ref++;
 	}
 
 	struct PageInfo * currPage = initPage;
-	for (int i = 0; i < envsPages; i++) {
+	for (i = 0; i < envsPages; i++) {
 		
-		page_insert((pml4e_t *)PADDR(pml4e), currPage, (void *)(UENVS + i * PGSIZE), PTE_U );
+		page_insert(boot_pml4e, currPage, (void *)(UENVS + i * PGSIZE), PTE_U );
 
 		currPage++;
 		//cprintf(" \n pml4e addr is %x \n", (pml4e_t *)PADDR(pml4e));
@@ -329,7 +330,6 @@ x64_vm_init(void)
 	// The array of PageInfo struct spans several physical pages
 	physaddr_t phy_addr = PADDR(pages);
 	void *vir_addr = (void*)UPAGES; 
-	int i;
 
 	//////////////////////////////////////////////////////////////////////
 	// Map the 'envs' array read-only by the user at linear address UENVS
@@ -340,7 +340,7 @@ x64_vm_init(void)
 	// LAB 3: Your code here.
 
 	for (i = 0; i < npages * sizeof(struct PageInfo) / PGSIZE; i++) {
-		page_insert((pml4e_t *)PADDR(pml4e), 
+		page_insert(boot_pml4e, 
 			(struct PageInfo*)pa2page(phy_addr), vir_addr, PTE_U | PTE_P);
 		phy_addr = phy_addr + PGSIZE;
 		vir_addr = vir_addr + PGSIZE;
@@ -361,7 +361,7 @@ x64_vm_init(void)
 	vir_addr = (void*)(KSTACKTOP - KSTKSIZE);
 	
 	for (i = 0; i < KSTKSIZE / PGSIZE; i++) {
-		page_insert((pml4e_t *)PADDR(pml4e), 
+		page_insert(boot_pml4e, 
 			(struct PageInfo*)pa2page(phy_addr), vir_addr, PTE_W | PTE_P);
 		phy_addr = phy_addr + PGSIZE;
 		vir_addr = vir_addr + PGSIZE;

@@ -121,9 +121,10 @@ env_init(void)
 	// Set up envs array
 	// LAB 3: Your code here.
 	struct Env * last = NULL;
+	int i;
 	
 	
-	for (int i =0; i < NENV; i++) {
+	for (i =0; i < NENV; i++) {
 		envs[i].env_id = 0;
 		envs[i].env_status = ENV_FREE;
 
@@ -298,16 +299,21 @@ region_alloc(struct Env *e, void *va, size_t len)
 	// (But only if you need it for load_icode.)
 
 	//Need to add panic behavior
+	int status;
+	uint64_t i;
 	
 	uint64_t roundedLen = (uint64_t) ROUNDUP(len,PGSIZE);
 
 	uint64_t roundedVa = (uint64_t) ROUNDDOWN(va,PGSIZE);
 
-	for (uint64_t i = roundedVa; i < roundedVa + roundedLen; i+= PGSIZE) {
+	for (i = roundedVa; i < roundedVa + roundedLen; i+= PGSIZE) {
 		struct PageInfo * currPage = page_alloc(0);
-		currPage->pp_ref++;
+//	the pp_ref will be increased by the page_insert() function
+//		currPage->pp_ref++;
 
-		page_insert((pml4e_t *)PADDR(e->env_pml4e),currPage, (void *)i, PTE_U| PTE_W);
+		status = page_insert(e->env_pml4e, currPage, (void *)i, PTE_U| PTE_W);
+		if (status < 0)
+			panic("page insertion failed!\n");
 		
 	}
 	
@@ -374,6 +380,8 @@ load_icode(struct Env *e, uint8_t *binary)
 	//  to make sure that the environment starts executing there.
 	//  What?  (See env_run() and env_pop_tf() below.)
 
+	
+
 	// LAB 3: Your code here
 	// Now map one page for the program's initial stack
 	// at virtual address USTACKTOP - PGSIZE.
@@ -383,33 +391,46 @@ load_icode(struct Env *e, uint8_t *binary)
 
 
 	struct Elf * theElf = (struct Elf *) binary;
+	int i, status;
 
 	if (theElf->e_magic!= ELF_MAGIC)
 		cprintf("\n\n\n Can't load Elf !!! \n\n\n)");
 
 	struct Proghdr * ph = (struct Proghdr *)((uint8_t *) theElf + theElf->e_phoff);
 	struct Proghdr * eph = ph +theElf->e_phnum;
-	
+
+	// change the root page table to env's pml4e, so as to load data	
+	lcr3(PADDR(e->env_pml4e));
 	for (; ph < eph; ph++) {
-		
-		region_alloc(e, (void *) ph->p_va, ph->p_memsz);
 		if ( ph->p_type == ELF_PROG_LOAD) {
-			//address to load into
+			region_alloc(e, (void *) ph->p_va, ph->p_memsz);
+			// address to load into
 			uint8_t * cursor = (uint8_t *) ph->p_va;
 
-			//address to load from
-			uint8_t * index = (uint8_t *) ph->p_offset;
+			// address to load from
+			uint8_t * index = binary + ph->p_offset;
 			
-			//number of bytes to load
-			uint64_t numBytes = ph->p_memsz;
-			
-			for (int i = 0;i < numBytes; i++) {
-				*(cursor+i) = *(index +i);	
+			// the actual size is ph->p_filesz
+			for (i = 0; i < ph->p_memsz; i++) {
+				if (i < ph->p_filesz)
+					*(cursor+i) = *(index +i);	
+				else
+					*(cursor+i) = 0;
 			}
 		}
-		
 	}
+
+	// set rip register in Trapframe to the entry point
+	e->env_tf.tf_rip = theElf->e_entry;  
+
+	// map stack
+	struct PageInfo *stack_page = page_alloc(0);
+	status = page_insert(e->env_pml4e, 
+		stack_page, (void *)(USTACKTOP - PGSIZE), PTE_U| PTE_W);
+	if (status < 0)
+		panic("page insertion failed!\n");
 	
+	lcr3(boot_cr3);
 }
 
 //
@@ -428,12 +449,12 @@ env_create(uint8_t *binary, enum EnvType type)
 
 	newEnvPtr = &nullPtr;
 	
-	env_alloc(newEnvPtr,0);
+	if (env_alloc(newEnvPtr, 0) < 0)
+		panic("env allocation failed!\n");
 
-	struct Env * theEnv = *newEnvPtr;
-	theEnv->env_type = type;
+	nullPtr->env_type = type;
 
-	load_icode(theEnv, binary);
+	load_icode(nullPtr, binary);
 	
 }
 
