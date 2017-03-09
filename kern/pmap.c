@@ -298,13 +298,13 @@ x64_vm_init(void)
 			page_alloc(0);
 		}
 		// why increase the reference every loop?
-		initPage->pp_ref++;
+//		initPage->pp_ref++;
 	}
 
 	struct PageInfo * currPage = initPage;
 	for (i = 0; i < envsPages; i++) {
 		
-		page_insert(boot_pml4e, currPage, (void *)(UENVS + i * PGSIZE), PTE_U );
+		page_insert(boot_pml4e, currPage, (void *)(UENVS + i * PGSIZE), PTE_U | PTE_P);
 
 		currPage++;
 		//cprintf(" \n pml4e addr is %x \n", (pml4e_t *)PADDR(pml4e));

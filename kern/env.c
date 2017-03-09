@@ -182,18 +182,12 @@ env_setup_vm(struct Env *e)
 	struct PageInfo *p = NULL;
 
 	// Allocate a page for the page directory
-	if (!(p = page_alloc(0)))
+	if (!(p = page_alloc(ALLOC_ZERO)))
 		return -E_NO_MEM;
 
 	p->pp_ref++;
 	e->env_pml4e = page2kva(p);
-
-	for ( i = PML4(UTOP); i < 512; i++) {
-		*((e->env_pml4e) +i) = *(boot_pml4e + i); 
-	}
-
-
-	
+	*(e->env_pml4e + PML4(UTOP)) = *(boot_pml4e + PML4(UTOP)); 
 	
 	// Now, set e->env_pml4e and initialize the page directory.
 	//
@@ -310,7 +304,6 @@ region_alloc(struct Env *e, void *va, size_t len)
 		struct PageInfo * currPage = page_alloc(0);
 //	the pp_ref will be increased by the page_insert() function
 //		currPage->pp_ref++;
-
 		status = page_insert(e->env_pml4e, currPage, (void *)i, PTE_U| PTE_W);
 		if (status < 0)
 			panic("page insertion failed!\n");
@@ -610,7 +603,7 @@ env_run(struct Env *e)
 
 	curenv->env_runs++;
 
-	lcr3((uint64_t)KADDR( (uint64_t)e->env_pml4e));
+	lcr3((uint64_t)PADDR( (uint64_t)e->env_pml4e));
 
 	struct Trapframe * tf = &(curenv->env_tf);
 	
