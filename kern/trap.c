@@ -45,6 +45,7 @@ void XX_fperr_handler();
 void XX_align_handler();
 void XX_mchk_handler();
 void XX_simderr_handler();
+void XX_syscall_handler();
 void XX_default_handler();
 
 
@@ -110,7 +111,7 @@ trap_init(void)
 	SETGATE(idt[17], 1, cs_seg, &XX_align_handler, 0);
 	SETGATE(idt[18], 1, cs_seg, &XX_mchk_handler, 0);
 	SETGATE(idt[19], 1, cs_seg, &XX_simderr_handler, 0);
-	SETGATE(idt[48], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[48], 1, cs_seg, &XX_syscall_handler, 3);
 	// Per-CPU setup
 	trap_init_percpu();
 }
@@ -197,6 +198,16 @@ trap_dispatch(struct Trapframe *tf)
 	
 	if (tf->tf_trapno == T_BRKPT)
 		monitor(tf);
+
+	if (tf->tf_trapno == T_SYSCALL) {
+		struct PushRegs *regs = &tf->tf_regs;
+
+		int64_t ret = syscall(regs->reg_rax, regs->reg_rdx, regs->reg_rcx, 
+				regs->reg_rbx, regs->reg_rdi, regs->reg_rsi);
+		regs->reg_rax = ret;
+
+		return;
+	}
 
 	// Unexpected trap: The user process or the kernel has a bug.
 	print_trapframe(tf);
