@@ -49,8 +49,26 @@
    Find the PUSHA,POPA macros in kern/macro.h. Since amd64 doesn't support
    pusha,popa so you will find these macros handy.
  */
-
-
+TRAPHANDLER_NOEC(XX_divide_handler, T_DIVIDE)
+TRAPHANDLER_NOEC(XX_debug_handler, T_DEBUG)
+TRAPHANDLER_NOEC(XX_nmi_handler, T_NMI)
+TRAPHANDLER_NOEC(XX_brkpt_handler, T_BRKPT)
+TRAPHANDLER_NOEC(XX_oflow_handler, T_OFLOW)
+TRAPHANDLER_NOEC(XX_bound_handler, T_BOUND)
+TRAPHANDLER_NOEC(XX_illop_handler, T_ILLOP)
+TRAPHANDLER_NOEC(XX_device_handler, T_DEVICE)
+TRAPHANDLER(XX_dblflt_handler, T_DBLFLT)
+TRAPHANDLER(XX_tss_handler, T_TSS)
+TRAPHANDLER(XX_segnp_handler, T_SEGNP)
+TRAPHANDLER(XX_stack_handler, T_STACK)
+TRAPHANDLER(XX_gpflt_handler, T_GPFLT)
+TRAPHANDLER(XX_pgflt_handler, T_PGFLT)
+TRAPHANDLER_NOEC(XX_fperr_handler, T_FPERR)
+TRAPHANDLER(XX_align_handler, T_ALIGN)
+TRAPHANDLER_NOEC(XX_mchk_handler, T_MCHK)
+TRAPHANDLER_NOEC(XX_simderr_handler, T_SIMDERR)
+TRAPHANDLER_NOEC(XX_syscall_handler, T_SYSCALL)
+TRAPHANDLER_NOEC(XX_default_handler, T_DEFAULT)
 
 /*
  * Lab 3: Your code here for _alltraps
@@ -58,4 +76,17 @@
  * Hint: Be sure to review the x64 calling convention from lab1
  *       for how to pass a pointer to the trapframe.
  */
+
+_alltraps:
+	subq $8, %rsp;
+	movw %ds, 0(%rsp);
+	subq $8, %rsp;
+	movw %es, 0(%rsp);
+	PUSHA
+	movw $GD_KD, %ax;
+	movw %ax, %es;
+	movw %ax, %ds;
+	movq %rsp, %rdi;
+	call trap  
+// can trap return? should we do something here?
 

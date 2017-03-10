@@ -26,6 +26,9 @@ static struct Trapframe *last_tf;
 struct Gatedesc idt[256] = { { 0 } };
 struct Pseudodesc idt_pd = {0,0};
 
+// declare handler function
+void XX_default_handler();
+
 
 static const char *trapname(int trapno)
 {
@@ -64,10 +67,32 @@ void
 trap_init(void)
 {
 	extern struct Segdesc gdt[];
-
+	uint16_t cs_seg;
+	
 	// LAB 3: Your code here.
 	idt_pd.pd_lim = sizeof(idt)-1;
 	idt_pd.pd_base = (uint64_t)idt;
+
+	asm("movw %%cs, %0" : "=r"(cs_seg));
+	SETGATE(idt[0], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[1], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[2], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[3], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[4], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[5], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[6], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[7], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[8], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[10], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[11], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[12], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[13], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[14], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[16], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[17], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[18], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[19], 1, cs_seg, &XX_default_handler, 0);
+	SETGATE(idt[48], 1, cs_seg, &XX_default_handler, 0);
 	// Per-CPU setup
 	trap_init_percpu();
 }
