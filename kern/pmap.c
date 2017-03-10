@@ -892,12 +892,15 @@ user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 	
 	void * virtAddress;
 	
-       for (uint64_t i = roundedVaStart; i <= roundedEnd; i += PGSIZE) {
+	for (uint64_t i = roundedVaStart; i <= roundedEnd; i += PGSIZE) {
 		virtAddress = (void *) i;
 		pte_t * pageTabEntry  = pml4e_walk(env->env_pml4e,virtAddress, 0);
 
 		if (pageTabEntry == NULL) {
-			user_mem_check_addr = i;
+			if ( roundedVaStart < (uint64_t) va)
+				user_mem_check_addr = (uint64_t) va;
+			else
+				user_mem_check_addr = i;
 			return -E_FAULT;
 		}
 			
@@ -907,11 +910,12 @@ user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 			||
 			( (perm & (PTE_U)) != (PTE_U) )
 			
-			)
+			){
 			user_mem_check_addr= i;
 			return -E_FAULT;
+		}
 		
-	}
+		}
 	
 	return 0;
 
