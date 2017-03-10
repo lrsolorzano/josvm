@@ -15,6 +15,9 @@
 #include <kern/syscall.h>
 #include <kern/console.h>
 
+
+static int sys_env_destroy(envid_t envid);
+
 // Print a string to the system console.
 // The string is exactly 'len' characters long.
 // Destroys the environment on memory errors.
