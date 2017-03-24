@@ -33,6 +33,28 @@ static struct Trapframe *last_tf;
 struct Gatedesc idt[256] = { { 0 } };
 struct Pseudodesc idt_pd = {0,0};
 
+// declare handler function
+void XX_divide_handler();
+void XX_debug_handler();
+void XX_nmi_handler();
+void XX_brkpt_handler();
+void XX_oflow_handler();
+void XX_bound_handler();
+void XX_illop_handler();
+void XX_device_handler();
+void XX_dblflt_handler();
+void XX_tss_handler();
+void XX_segnp_handler();
+void XX_stack_handler();
+void XX_gpflt_handler();
+void XX_pgflt_handler();
+void XX_fperr_handler();
+void XX_align_handler();
+void XX_mchk_handler();
+void XX_simderr_handler();
+void XX_syscall_handler();
+void XX_default_handler();
+
 
 static const char *trapname(int trapno)
 {
@@ -73,10 +95,32 @@ void
 trap_init(void)
 {
 	extern struct Segdesc gdt[];
-
+	uint16_t cs_seg;
+	
 	// LAB 3: Your code here.
 	idt_pd.pd_lim = sizeof(idt)-1;
 	idt_pd.pd_base = (uint64_t)idt;
+
+	asm("movw %%cs, %0" : "=r"(cs_seg));
+	SETGATE(idt[0], 1, cs_seg, &XX_divide_handler, 0);
+	SETGATE(idt[1], 1, cs_seg, &XX_debug_handler, 0);
+	SETGATE(idt[2], 1, cs_seg, &XX_nmi_handler, 0);
+	SETGATE(idt[3], 1, cs_seg, &XX_brkpt_handler, 3);
+	SETGATE(idt[4], 1, cs_seg, &XX_oflow_handler, 0);
+	SETGATE(idt[5], 1, cs_seg, &XX_bound_handler, 0);
+	SETGATE(idt[6], 1, cs_seg, &XX_illop_handler, 0);
+	SETGATE(idt[7], 1, cs_seg, &XX_device_handler, 0);
+	SETGATE(idt[8], 1, cs_seg, &XX_dblflt_handler, 0);
+	SETGATE(idt[10], 1, cs_seg, &XX_tss_handler, 0);
+	SETGATE(idt[11], 1, cs_seg, &XX_segnp_handler, 0);
+	SETGATE(idt[12], 1, cs_seg, &XX_stack_handler, 0);
+	SETGATE(idt[13], 1, cs_seg, &XX_gpflt_handler, 0);
+	SETGATE(idt[14], 1, cs_seg, &XX_pgflt_handler, 0);
+	SETGATE(idt[16], 1, cs_seg, &XX_fperr_handler, 0);
+	SETGATE(idt[17], 1, cs_seg, &XX_align_handler, 0);
+	SETGATE(idt[18], 1, cs_seg, &XX_mchk_handler, 0);
+	SETGATE(idt[19], 1, cs_seg, &XX_simderr_handler, 0);
+	SETGATE(idt[48], 1, cs_seg, &XX_syscall_handler, 3);
 	// Per-CPU setup
 	trap_init_percpu();
 }
@@ -181,6 +225,21 @@ trap_dispatch(struct Trapframe *tf)
 {
 	// Handle processor exceptions.
 	// LAB 3: Your code here.
+	if (tf->tf_trapno == T_PGFLT)
+		page_fault_handler(tf);
+	
+	if (tf->tf_trapno == T_BRKPT)
+		monitor(tf);
+
+	if (tf->tf_trapno == T_SYSCALL) {
+		struct PushRegs *regs = &tf->tf_regs;
+
+		int64_t ret = syscall(regs->reg_rax, regs->reg_rdx, regs->reg_rcx, 
+				regs->reg_rbx, regs->reg_rdi, regs->reg_rsi);
+		regs->reg_rax = ret;
+
+		return;
+	}
 
 	// Handle spurious interrupts
 	// The hardware sometimes raises these because of noise on the
@@ -206,6 +265,7 @@ trap_dispatch(struct Trapframe *tf)
 
 	// Unexpected trap: The user process or the kernel has a bug.
 	print_trapframe(tf);
+	
 	if (tf->tf_cs == GD_KT)
 		panic("unhandled trap in kernel");
 	else {
@@ -284,8 +344,11 @@ page_fault_handler(struct Trapframe *tf)
 	fault_va = rcr2();
 
 	// Handle kernel-mode page faults.
-
 	// LAB 3: Your code here.
+
+	if (tf->tf_cs == GD_KT)
+		panic("Page fault in kernel!\n");
+
 
 	// We've already handled kernel-mode exceptions, so if we get here,
 	// the page fault happened in user mode.

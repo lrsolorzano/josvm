@@ -121,7 +121,6 @@ i386_init(void)
 #if defined(TEST_EPT_MAP)
 	test_ept_map();
 #endif
-
 	ENV_CREATE(user_icode, ENV_TYPE_USER);
 #endif // TEST*
 

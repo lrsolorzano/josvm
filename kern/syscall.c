@@ -21,6 +21,9 @@
 #include <vmm/vmx.h>
 #endif
 
+
+static int sys_env_destroy(envid_t envid);
+
 // Print a string to the system console.
 // The string is exactly 'len' characters long.
 // Destroys the environment on memory errors.
@@ -31,6 +34,7 @@ sys_cputs(const char *s, size_t len)
 	// Destroy the environment if not.
 
 	// LAB 3: Your code here.
+	(user_mem_assert(curenv, s, len, PTE_U));
 
 	// Print the string supplied by the user.
 	cprintf("%.*s", len, s);
@@ -371,7 +375,7 @@ syscall(uint64_t syscallno, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, 
 	// Return any appropriate return value.
 	// LAB 3: Your code here.
 
-	panic("syscall not implemented");
+//	panic("syscall not implemented");
 
 	switch (syscallno) {
 #ifndef VMM_GUEST
@@ -390,7 +394,11 @@ syscall(uint64_t syscallno, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, 
 		sys_vmx_incr_vmdisk_number();
 		return 0;
 #endif
-		
+	case SYS_cputs: sys_cputs((char*)a1, (size_t)a2); return 0;
+	case SYS_cgetc: return sys_cgetc();
+	case SYS_env_destroy: return sys_env_destroy((envid_t)a1);
+	case SYS_getenvid: return sys_getenvid();	
+
 	default:
 		return -E_NO_SYS;
 	}

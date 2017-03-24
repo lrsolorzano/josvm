@@ -128,7 +128,24 @@ env_init(void)
 {
 	// Set up envs array
 	// LAB 3: Your code here.
+	struct Env * last = NULL;
+	int i;
+	
+	
+	for (i =0; i < NENV; i++) {
+		envs[i].env_id = 0;
+		envs[i].env_status = ENV_FREE;
 
+		envs[i].env_link = NULL;
+		
+		//Similar to free page setup in pmap.c
+		
+		if (last)
+			last->env_link = &envs[i];
+		else
+			env_free_list = &envs[i];
+		last = &envs[i];
+	}
 	// Per-CPU part of the initialization
 	env_init_percpu();
 }
@@ -173,9 +190,13 @@ env_setup_vm(struct Env *e)
 	struct PageInfo *p = NULL;
 
 	// Allocate a page for the page directory
-	if (!(p = page_alloc(0)))
+	if (!(p = page_alloc(ALLOC_ZERO)))
 		return -E_NO_MEM;
 
+	p->pp_ref++;
+	e->env_pml4e = page2kva(p);
+	*(e->env_pml4e + PML4(UTOP)) = *(boot_pml4e + PML4(UTOP)); 
+	
 	// Now, set e->env_pml4e and initialize the page directory.
 	//
 	// Hint:
@@ -404,7 +425,26 @@ region_alloc(struct Env *e, void *va, size_t len)
 {
 	// LAB 3: Your code here.
 	// (But only if you need it for load_icode.)
-	//
+
+	//Need to add panic behavior
+	int status;
+	uint64_t i;
+	
+	uint64_t roundedLen = (uint64_t) ROUNDUP(len,PGSIZE);
+
+	uint64_t roundedVa = (uint64_t) ROUNDDOWN(va,PGSIZE);
+
+	for (i = roundedVa; i < roundedVa + roundedLen; i+= PGSIZE) {
+		struct PageInfo * currPage = page_alloc(0);
+//	the pp_ref will be increased by the page_insert() function
+//		currPage->pp_ref++;
+		status = page_insert(e->env_pml4e, currPage, (void *)i, PTE_U| PTE_W);
+		if (status < 0)
+			panic("page insertion failed!\n");
+		
+	}
+	
+	
 	// Hint: It is easier to use region_alloc if the caller can pass
 	//   'va' and 'len' values that are not page-aligned.
 	//   You should round va down, and round (va + len) up.
@@ -448,7 +488,10 @@ load_icode(struct Env *e, uint8_t *binary)
 	//  (The ELF header should have ph->p_filesz <= ph->p_memsz.)
 	//  Use functions from the previous lab to allocate and map pages.
 	//
-	//  All page protection bits should be user read/write for now.
+
+	
+	
+//  All page protection bits should be user read/write for now.
 	//  ELF segments are not necessarily page-aligned, but you can
 	//  assume for this function that no two segments will touch
 	//  the same virtual page.
@@ -464,12 +507,57 @@ load_icode(struct Env *e, uint8_t *binary)
 	//  to make sure that the environment starts executing there.
 	//  What?  (See env_run() and env_pop_tf() below.)
 
+	
+
 	// LAB 3: Your code here
 	// Now map one page for the program's initial stack
 	// at virtual address USTACKTOP - PGSIZE.
 
 	// LAB 3: Your code here.
 	e->elf = binary;
+
+
+	struct Elf * theElf = (struct Elf *) binary;
+	int i, status;
+
+	if (theElf->e_magic!= ELF_MAGIC)
+		cprintf("\n\n\n Can't load Elf !!! \n\n\n)");
+
+	struct Proghdr * ph = (struct Proghdr *)((uint8_t *) theElf + theElf->e_phoff);
+	struct Proghdr * eph = ph +theElf->e_phnum;
+
+	// change the root page table to env's pml4e, so as to load data	
+	lcr3(PADDR(e->env_pml4e));
+	for (; ph < eph; ph++) {
+		if ( ph->p_type == ELF_PROG_LOAD) {
+			region_alloc(e, (void *) ph->p_va, ph->p_memsz);
+			// address to load into
+			uint8_t * cursor = (uint8_t *) ph->p_va;
+
+			// address to load from
+			uint8_t * index = binary + ph->p_offset;
+			
+			// the actual size is ph->p_filesz
+			for (i = 0; i < ph->p_memsz; i++) {
+				if (i < ph->p_filesz)
+					*(cursor+i) = *(index +i);	
+				else
+					*(cursor+i) = 0;
+			}
+		}
+	}
+
+	// set rip register in Trapframe to the entry point
+	e->env_tf.tf_rip = theElf->e_entry;  
+
+	// map stack
+	struct PageInfo *stack_page = page_alloc(0);
+	status = page_insert(e->env_pml4e, 
+		stack_page, (void *)(USTACKTOP - PGSIZE), PTE_U| PTE_W);
+	if (status < 0)
+		panic("page insertion failed!\n");
+	
+	lcr3(boot_cr3);
 }
 
 //
@@ -483,9 +571,19 @@ void
 env_create(uint8_t *binary, enum EnvType type)
 {
 	// LAB 3: Your code here.
-
 	// If this is the file server (type == ENV_TYPE_FS) give it I/O privileges.
 	// LAB 5: Your code here.
+	struct Env ** newEnvPtr;
+	struct Env * nullPtr = NULL;
+
+	newEnvPtr = &nullPtr;
+	
+	if (env_alloc(newEnvPtr, 0) < 0)
+		panic("env allocation failed!\n");
+
+	nullPtr->env_type = type;
+
+	load_icode(nullPtr, binary);
 }
 
 //
@@ -621,7 +719,11 @@ env_pop_tf(struct Trapframe *tf)
 void
 env_run(struct Env *e)
 {
-	// Step 1: If this is a context switch (a new environment is running):
+
+
+
+
+// Step 1: If this is a context switch (a new environment is running):
 	//	   1. Set the current environment (if any) back to
 	//	      ENV_RUNNABLE if it is ENV_RUNNING (think about
 	//	      what other states it can be in),
@@ -629,10 +731,15 @@ env_run(struct Env *e)
 	//	   3. Set its status to ENV_RUNNING,
 	//	   4. Update its 'env_runs' counter,
 	//	   5. Use lcr3() to switch to its address space.
-	// Step 2: Use env_pop_tf() to restore the environment's
+
+	
+	
+	
+	
+// Step 2: Use env_pop_tf() to restore the environment's
 	//	   registers and drop into user mode in the
 	//	   environment.
-
+	
 	// Hint: This function loads the new environment's state from
 	//	e->env_tf.  Go back through the code you wrote above
 	//	and make sure you have set the relevant parts of
@@ -640,6 +747,21 @@ env_run(struct Env *e)
 
 	// LAB 3: Your code here.
 
-	panic("env_run not yet implemented");
+	if (curenv) 
+		curenv->env_status = ENV_RUNNABLE;
+	
+	curenv = e;
+
+	curenv->env_status = ENV_RUNNING;
+
+	curenv->env_runs++;
+
+	lcr3((uint64_t)PADDR( (uint64_t)e->env_pml4e));
+
+	struct Trapframe * tf = &(curenv->env_tf);
+	
+	env_pop_tf(tf);
+	
+	//panic("env_run not yet implemented");
 }
 

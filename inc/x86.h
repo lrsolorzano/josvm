@@ -261,6 +261,30 @@ read_rsp(void)
 	return esp;
 }
 
+static __inline uint64_t
+read_rdi(void)
+{
+	uint64_t rdi;
+	__asm __volatile("movq %%rdi,%0" : "=r" (rdi));
+	return rdi;
+}
+
+static __inline uint64_t
+read_rsi(void)
+{
+	uint64_t rsi;
+	__asm __volatile("movq %%rsi,%0" : "=r" (rsi));
+	return rsi;
+}
+
+static __inline uint64_t
+read_rdx(void)
+{
+	uint64_t rdx;
+	__asm __volatile("movq %%rdx,%0" : "=r" (rdx));
+	return rdx;
+}
+
 #define read_rip(var) __asm __volatile("leaq (%%rip), %0" : "=r" (var)::"cc","memory")
 
 static __inline void
