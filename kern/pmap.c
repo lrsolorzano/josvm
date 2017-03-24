@@ -881,8 +881,8 @@ user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
 	// LAB 3: Your code here.
 	uint64_t roundedEnd = (uint64_t) ROUNDDOWN(va+len,PGSIZE);
-
 	uint64_t roundedVaStart = (uint64_t) ROUNDDOWN(va,PGSIZE);
+	uint64_t i;
 
 	if ( roundedEnd > ULIM) {
 		if ((uint64_t) va > ULIM)
@@ -895,7 +895,7 @@ user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 	
 	void * virtAddress;
 	
-	for (uint64_t i = roundedVaStart; i <= roundedEnd; i += PGSIZE) {
+	for (i = roundedVaStart; i <= roundedEnd; i += PGSIZE) {
 		virtAddress = (void *) i;
 		pte_t * pageTabEntry  = pml4e_walk(env->env_pml4e,virtAddress, 0);
 
