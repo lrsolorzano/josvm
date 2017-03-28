@@ -399,6 +399,7 @@ x64_vm_init(void)
 }
 
 
+
 // Modify mappings in boot_pml4e to support SMP
 //   - Map the per-CPU stacks in the region [KSTACKTOP-PTSIZE, KSTACKTOP)
 //
@@ -422,6 +423,13 @@ mem_init_mp(void)
 	//
 	// LAB 4: Your code here:
 
+	int i;
+	uintptr_t kstacktop;
+	for (i = 0; i < NCPU; i++) {
+		kstacktop = KSTACKTOP - (KSTKSIZE + KSTKGAP) * i;
+		boot_map_region(boot_pml4e, kstacktop - KSTKSIZE, KSTKSIZE,
+				PADDR(percpu_kstacks[i]), PTE_P|PTE_W);
+	}
 }
 
 // --------------------------------------------------------------
@@ -485,6 +493,7 @@ page_init(void)
 			|| ( physAddr >= PADDR(BOOT_PAGE_TABLE_START) && physAddr < PADDR(BOOT_PAGE_TABLE_END))
 			|| ( physAddr >= EXTPHYSMEM && physAddr < (PADDR(boot_alloc(0))))  //Reserve space for kernel image and the memory used by boot_alloc
 			|| ( physAddr >PADDR(bootstacktop) - KSTKSIZE && physAddr <= PADDR(bootstacktop) ) //Space for kernel stack while it's booting (now). 
+			|| (physAddr == MPENTRY_PADDR)
 			)
 		{
 			continue; 
@@ -923,7 +932,14 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// Hint: The staff solution uses boot_map_region.
 	//
 	// Your code here:
-	panic("mmio_map_region not implemented");
+	uintptr_t va = base;
+	size = ROUNDUP(size, PGSIZE);
+
+	base += size;
+	if (base >= MMIOLIM)
+		panic("MMIO mappings exceeded MMIOLIM");
+	boot_map_region(boot_pml4e, va, size, pa, PTE_P|PTE_W|PTE_PWT|PTE_PCD);
+	return (void*) va;
 }
 
 static uintptr_t user_mem_check_addr;
