@@ -67,8 +67,8 @@ duppage(envid_t envid, unsigned pn)
 	pte = uvpt[pn];
 	
 
-	// if the page is just read-only, just map it in.
-	if (!(pte & (PTE_W|PTE_COW))) {
+	// if the page is just read-only or is library-shared, map it directly.
+	if (!(pte & (PTE_W|PTE_COW)) || (pte & PTE_SHARE)) {
 		if ((r = sys_page_map(0, addr, envid, addr, pte & PTE_SYSCALL)) < 0)
 			panic("sys_page_map: %e", r);
 		return 0;

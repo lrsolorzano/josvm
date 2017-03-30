@@ -575,6 +575,8 @@ env_create(uint8_t *binary, enum EnvType type)
 	// LAB 3: Your code here.
 	// If this is the file server (type == ENV_TYPE_FS) give it I/O privileges.
 	// LAB 5: Your code here.
+
+
 	struct Env ** newEnvPtr;
 	struct Env * nullPtr = NULL;
 
@@ -584,6 +586,8 @@ env_create(uint8_t *binary, enum EnvType type)
 		panic("env allocation failed!\n");
 
 	nullPtr->env_type = type;
+	if (type == ENV_TYPE_FS)
+		nullPtr->env_tf.tf_eflags |= FL_IOPL_3;
 
 	load_icode(nullPtr, binary);
 }
@@ -725,7 +729,6 @@ env_run(struct Env *e)
 
 	// We are leaving the kernel, release the big kernel lock
 	unlock_kernel();
-
 
 
 // Step 1: If this is a context switch (a new environment is running):

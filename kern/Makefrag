@@ -91,7 +91,9 @@ KERN_BINFILES +=	user/testpteshare \
 			user/testpiperace2 \
 			user/primespipe \
 			user/testkbd \
-			user/testshell
+			user/testshell \
+			user/dumbfork \
+			user/faultread
 
 ifndef GUEST_KERN
 # Binary files for LAB8

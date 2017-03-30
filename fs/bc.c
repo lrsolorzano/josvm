@@ -47,12 +47,16 @@ bc_pgfault(struct UTrapframe *utf)
 	// of the block from the disk into that page.
 	// Hint: first round addr to page boundary.
 	//
-	// LAB 5: your code here:
-
+	addr = ROUNDDOWN(addr, PGSIZE);
+	if ((r = sys_page_alloc(0, addr, PTE_U|PTE_P|PTE_W)) < 0)
+		panic("in bc_pgfault, sys_page_alloc: %e", r);
 
 #ifndef VMM_GUEST
 
 	// LAB 5: Your code here
+
+	if ((r = ide_read(blockno * BLKSECTS, addr, BLKSECTS)) < 0)
+		panic("in bc_pgfault, ide_read: %e", r);
 
 #else  // VMM GUEST
 
@@ -88,6 +92,21 @@ flush_block(void *addr)
 
 	// LAB 5: Your code here.
 	panic("flush_block not implemented");
+
+	if (!va_is_mapped(addr) || !va_is_dirty(addr))
+		return;
+
+	// Write the disk block and clear PTE_D.
+	addr = ROUNDDOWN(addr, BLKSIZE);
+#ifndef VMM_GUEST
+	ide_write(blockno * BLKSECTS, (void*) addr, BLKSECTS);
+#else
+
+	/* Your code here */
+	panic("Host write not implemented!\n");
+
+#endif
+	sys_page_map(0, addr, 0, addr, uvpt[PGNUM(addr)] & PTE_SYSCALL);
 }
 
 // Test that the block cache works, by smashing the superblock and

@@ -108,25 +108,25 @@ trap_init(void)
 	idt_pd.pd_base = (uint64_t)idt;
 
 	asm("movw %%cs, %0" : "=r"(cs_seg));
-	SETGATE(idt[0], 1, cs_seg, &XX_divide_handler, 0);
-	SETGATE(idt[1], 1, cs_seg, &XX_debug_handler, 0);
-	SETGATE(idt[2], 1, cs_seg, &XX_nmi_handler, 0);
-	SETGATE(idt[3], 1, cs_seg, &XX_brkpt_handler, 3);
-	SETGATE(idt[4], 1, cs_seg, &XX_oflow_handler, 0);
-	SETGATE(idt[5], 1, cs_seg, &XX_bound_handler, 0);
-	SETGATE(idt[6], 1, cs_seg, &XX_illop_handler, 0);
-	SETGATE(idt[7], 1, cs_seg, &XX_device_handler, 0);
-	SETGATE(idt[8], 1, cs_seg, &XX_dblflt_handler, 0);
-	SETGATE(idt[10], 1, cs_seg, &XX_tss_handler, 0);
-	SETGATE(idt[11], 1, cs_seg, &XX_segnp_handler, 0);
-	SETGATE(idt[12], 1, cs_seg, &XX_stack_handler, 0);
-	SETGATE(idt[13], 1, cs_seg, &XX_gpflt_handler, 0);
-	SETGATE(idt[14], 1, cs_seg, &XX_pgflt_handler, 0);
-	SETGATE(idt[16], 1, cs_seg, &XX_fperr_handler, 0);
-	SETGATE(idt[17], 1, cs_seg, &XX_align_handler, 0);
-	SETGATE(idt[18], 1, cs_seg, &XX_mchk_handler, 0);
-	SETGATE(idt[19], 1, cs_seg, &XX_simderr_handler, 0);
-	SETGATE(idt[48], 1, cs_seg, &XX_syscall_handler, 3);
+	SETGATE(idt[0], 0, cs_seg, &XX_divide_handler, 0);
+	SETGATE(idt[1], 0, cs_seg, &XX_debug_handler, 0);
+	SETGATE(idt[2], 0, cs_seg, &XX_nmi_handler, 0);
+	SETGATE(idt[3], 0, cs_seg, &XX_brkpt_handler, 3);
+	SETGATE(idt[4], 0, cs_seg, &XX_oflow_handler, 0);
+	SETGATE(idt[5], 0, cs_seg, &XX_bound_handler, 0);
+	SETGATE(idt[6], 0, cs_seg, &XX_illop_handler, 0);
+	SETGATE(idt[7], 0, cs_seg, &XX_device_handler, 0);
+	SETGATE(idt[8], 0, cs_seg, &XX_dblflt_handler, 0);
+	SETGATE(idt[10], 0, cs_seg, &XX_tss_handler, 0);
+	SETGATE(idt[11], 0, cs_seg, &XX_segnp_handler, 0);
+	SETGATE(idt[12], 0, cs_seg, &XX_stack_handler, 0);
+	SETGATE(idt[13], 0, cs_seg, &XX_gpflt_handler, 0);
+	SETGATE(idt[14], 0, cs_seg, &XX_pgflt_handler, 0);
+	SETGATE(idt[16], 0, cs_seg, &XX_fperr_handler, 0);
+	SETGATE(idt[17], 0, cs_seg, &XX_align_handler, 0);
+	SETGATE(idt[18], 0, cs_seg, &XX_mchk_handler, 0);
+	SETGATE(idt[19], 0, cs_seg, &XX_simderr_handler, 0);
+	SETGATE(idt[48], 0, cs_seg, &XX_syscall_handler, 3);
 	SETGATE(idt[IRQ_OFFSET + 0], 0, GD_KT, &Xirq0, 0);
 	SETGATE(idt[IRQ_OFFSET + 1], 0, GD_KT, &Xirq1, 0);
 	SETGATE(idt[IRQ_OFFSET + 2], 0, GD_KT, &Xirq2, 0);
@@ -291,6 +291,24 @@ trap_dispatch(struct Trapframe *tf)
 
 	// Handle keyboard and serial interrupts.
 	// LAB 5: Your code here.
+
+	if (tf->tf_trapno == IRQ_OFFSET + IRQ_KBD) {
+		kbd_intr();
+		return;
+	}
+	if (tf->tf_trapno == IRQ_OFFSET + IRQ_SERIAL) {
+		serial_intr();
+		return;
+	}
+
+	if (tf->tf_trapno == IRQ_OFFSET + IRQ_KBD) {
+		kbd_intr();
+		return;
+	}
+	if (tf->tf_trapno == IRQ_OFFSET + IRQ_SERIAL) {
+		serial_intr();
+		return;
+	}
 
 	// Unexpected trap: The user process or the kernel has a bug.
 	print_trapframe(tf);
