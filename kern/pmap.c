@@ -992,14 +992,8 @@ user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 				user_mem_check_addr = i;
 			return -E_FAULT;
 		}
-			
-		
-		if (
-			(( (*pageTabEntry) & (PTE_U|PTE_P)) != (PTE_U|PTE_P))
-			||
-			( (perm & (PTE_U)) != (PTE_U) )
-			
-			){
+
+		if (((perm | PTE_P) & *pageTabEntry) != (perm | PTE_P)) {
 			if ( i < (uint64_t) va)
 				user_mem_check_addr = (uint64_t) va;
 			else
