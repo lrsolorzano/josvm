@@ -966,7 +966,7 @@ int
 user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
 	// LAB 3: Your code here.
-	uint64_t roundedEnd = (uint64_t) ROUNDDOWN(va+len,PGSIZE);
+	uint64_t roundedEnd = (uint64_t) ROUNDDOWN(va+len-1,PGSIZE);
 	uint64_t roundedVaStart = (uint64_t) ROUNDDOWN(va,PGSIZE);
 	uint64_t i;
 
