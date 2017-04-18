@@ -68,6 +68,7 @@ sys_env_destroy(envid_t envid)
 
 	if ((r = envid2env(envid, &e, 1)) < 0)
 		return r;
+	cprintf("[%08x] exiting gracefully\n", e->env_id);
 	env_destroy(e);
 	return 0;
 }
@@ -371,12 +372,15 @@ sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 static int
 sys_ipc_recv(void *dstva)
 {
+	struct Env *e;
+
 	if (curenv->env_ipc_recving)
 		panic("already recving!");
 	
 	curenv->env_ipc_recving = 1;
 	curenv->env_ipc_dstva = dstva;
 	curenv->env_status = ENV_NOT_RUNNABLE;
+	e = curenv;
 	sched_yield();
 
 	return 0;

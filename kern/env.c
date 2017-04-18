@@ -194,6 +194,15 @@ env_setup_vm(struct Env *e)
 		return -E_NO_MEM;
 
 	p->pp_ref++;
+
+/*
+	physaddr_t tmp_phy = page2pa(p);
+	if (PPN(tmp_phy) >= npages)
+		panic("KADDR called with invalid pa %08lx", tmp_phy);
+	uint64_t tmp_int = tmp_phy + 0x8004000000;
+	e->env_pml4e = (pml4e_t*)tmp_int;
+*/
+
 	e->env_pml4e = page2kva(p);
 	*(e->env_pml4e + PML4(UTOP)) = *(boot_pml4e + PML4(UTOP)); 
 	
@@ -218,6 +227,7 @@ env_setup_vm(struct Env *e)
 
 	// UVPT maps the env's own page table read-only.
 	// Permissions: kernel R, user R
+	e->env_cr3 = page2pa(p);
 	e->env_pml4e[PML4(UVPT)] = e->env_cr3 | PTE_P | PTE_U;
 
 	return 0;
@@ -431,12 +441,10 @@ region_alloc(struct Env *e, void *va, size_t len)
 	//Need to add panic behavior
 	int status;
 	uint64_t i;
-	
-	uint64_t roundedLen = (uint64_t) ROUNDUP(len,PGSIZE);
+	uint64_t roundedStart = (uint64_t) ROUNDDOWN(va,PGSIZE);
+	uint64_t roundedEnd = (uint64_t) ROUNDDOWN(va+len,PGSIZE);
 
-	uint64_t roundedVa = (uint64_t) ROUNDDOWN(va,PGSIZE);
-
-	for (i = roundedVa; i < roundedVa + roundedLen; i+= PGSIZE) {
+	for (i = roundedStart; i <= roundedEnd; i+= PGSIZE) {
 		struct PageInfo * currPage = page_alloc(0);
 //	the pp_ref will be increased by the page_insert() function
 //		currPage->pp_ref++;
@@ -542,7 +550,7 @@ load_icode(struct Env *e, uint8_t *binary)
 			// the actual size is ph->p_filesz
 			for (i = 0; i < ph->p_memsz; i++) {
 				if (i < ph->p_filesz)
-					*(cursor+i) = *(index +i);	
+					*(cursor+i) = *(index+i);	
 				else
 					*(cursor+i) = 0;
 			}
@@ -755,7 +763,7 @@ env_run(struct Env *e)
 
 	// LAB 3: Your code here.
 
-	if (curenv) 
+	if (curenv && curenv->env_status == ENV_RUNNING) 
 		curenv->env_status = ENV_RUNNABLE;
 	
 	curenv = e;

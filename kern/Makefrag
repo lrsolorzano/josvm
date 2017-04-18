@@ -93,7 +93,12 @@ KERN_BINFILES +=	user/testpteshare \
 			user/testkbd \
 			user/testshell \
 			user/dumbfork \
-			user/faultread
+			user/forktree \
+			user/spin \
+			user/stresssched \
+			user/sendpage \
+			user/pingpong \
+			user/primes
 
 ifndef GUEST_KERN
 # Binary files for LAB8

@@ -398,8 +398,10 @@ page_fault_handler(struct Trapframe *tf)
 	// Handle kernel-mode page faults.
 	// LAB 3: Your code here.
 
-	if (tf->tf_cs == GD_KT)
+	if (tf->tf_cs == GD_KT) {
+		print_trapframe(tf);
 		panic("Page fault in kernel!\n");
+	}
 
 	// See if the environment has installed a user page fault handler.
 	if (curenv->env_pgfault_upcall == 0) {

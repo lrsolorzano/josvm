@@ -283,7 +283,7 @@ x64_vm_init(void)
 	// particular, we can now map memory using boot_map_region or page_insert
 	page_init();
 
-	uint64_t envsSize = (sizeof(struct Env)) * (NENV);
+	uint64_t envsSize = sizeof(struct Env) * NENV;
 
 	uint64_t envsPages = ROUNDUP(envsSize,PGSIZE)/PGSIZE;
 
@@ -807,7 +807,7 @@ page_insert(pml4e_t *pml4e, struct PageInfo *pp, void *va, int perm)
 	// Already a page exist at 'va'
 	if (*pte & PTE_P) {
 		if (PTE_ADDR(*pte) == pte_addr) { // page re-inserted to the same va
-			*pte = *pte | perm | PTE_P;
+			*pte = pte_addr | perm | PTE_P;
 			tlb_invalidate(pml4e, va);
 			return 0;
 		}
@@ -876,7 +876,7 @@ page_remove(pml4e_t *pml4e, void *va)
 	pgInfo->pp_ref = pgInfo->pp_ref -1;
 	if (pgInfo->pp_ref == 0) {
 		pgInfo->pp_link = NULL;
-		page_free (pgInfo);
+		page_free(pgInfo);
 	}
 	
 	// clear the pte entry
