@@ -90,9 +90,6 @@ flush_block(void *addr)
 	if (addr < (void*)DISKMAP || addr >= (void*)(DISKMAP + DISKSIZE))
 		panic("flush_block of bad va %08x", addr);
 
-	// LAB 5: Your code here.
-	panic("flush_block not implemented");
-
 	if (!va_is_mapped(addr) || !va_is_dirty(addr))
 		return;
 

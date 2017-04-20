@@ -772,7 +772,7 @@ env_run(struct Env *e)
 
 	curenv->env_runs++;
 
-	lcr3((uint64_t)PADDR( (uint64_t)e->env_pml4e));
+	lcr3((uint64_t)PADDR((uint64_t)e->env_pml4e));
 
 	struct Trapframe * tf = &(curenv->env_tf);
 	
