@@ -20,7 +20,7 @@
 #include <vmm/ept.h>
 #include <vmm/vmx.h>
 #endif
-
+#include <kern/e1000.h>
 
 static int sys_env_destroy(envid_t envid);
 
@@ -391,10 +391,22 @@ sys_ipc_recv(void *dstva)
 static int
 sys_time_msec(void)
 {
-	// LAB 6: Your code here.
-	panic("sys_time_msec not implemented");
+	return (int) time_msec();
 }
 
+static int
+sys_net_transmit(const void *data, size_t len)
+{
+	user_mem_assert(curenv, data, len, 0);
+	return e1000_transmit(data, len);
+}
+
+static int
+sys_net_receive(void *buf, size_t len)
+{
+	user_mem_assert(curenv, buf, len, PTE_W);
+	return e1000_receive(buf, len);
+}
 
 // Maps a page from the evnironment corresponding to envid into the guest vm 
 // environments phys addr space. 
@@ -520,6 +532,12 @@ syscall(uint64_t syscallno, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, 
 	case SYS_ipc_recv:
 		sys_ipc_recv((void*) a1);
 		return 0;
+	case SYS_time_msec:
+		return sys_time_msec();
+	case SYS_net_transmit:
+		return sys_net_transmit((const void*)a1, a2);
+	case SYS_net_receive:
+		return sys_net_receive((void*)a1, a2);
 	default:
 		return -E_NO_SYS;
 	}

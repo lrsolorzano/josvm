@@ -135,6 +135,19 @@ envid_t
 sys_env_mkguest(uint64_t gphysz, uint64_t gRIP) {
 	return (envid_t) syscall(SYS_env_mkguest, 0, gphysz, gRIP, 0, 0, 0);
 }
+
+int
+sys_net_transmit(const char *data, unsigned int len)
+{
+	return syscall(SYS_net_transmit, 0, (uint64_t)data, len, 0, 0, 0);
+}
+
+int
+sys_net_receive(char *buf, unsigned int len)
+{
+	return syscall(SYS_net_receive, 0, (uint64_t)buf, len, 0, 0, 0);
+}
+
 #ifndef VMM_GUEST
 void
 sys_vmx_list_vms() {
@@ -146,6 +159,7 @@ int
 sys_vmx_sel_resume(int i) {
 	return syscall(SYS_vmx_sel_resume, 0, i, 0, 0, 0, 0);
 }
+
 int
 sys_vmx_get_vmdisk_number() {
 	return syscall(SYS_vmx_get_vmdisk_number, 0, 0, 0, 0, 0, 0);

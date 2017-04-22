@@ -114,6 +114,7 @@ i386_init(void)
 
 	// Start fs.
 	ENV_CREATE(fs_fs, ENV_TYPE_FS);
+	ENV_CREATE(net_ns, ENV_TYPE_NS);
 
 #if defined(TEST)
 	// Don't touch -- used by grading script!
@@ -123,7 +124,7 @@ i386_init(void)
 #if defined(TEST_EPT_MAP)
 	test_ept_map();
 #endif
-	ENV_CREATE(user_primespipe, ENV_TYPE_USER);
+	ENV_CREATE(user_testtime, ENV_TYPE_USER);
 #endif // TEST*
 
 	// Should not be necessary - drains keyboard because interrupt has given up.
