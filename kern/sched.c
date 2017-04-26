@@ -61,6 +61,13 @@ sched_yield(void)
 		// If this environment is runnable, run it.
 		if (envs[k].env_status == ENV_RUNNABLE) {
 
+			//Turn VMX on if we're launching a guest OS.
+			if (envs[k].env_type == ENV_TYPE_GUEST) {
+#ifndef VMM_GUEST
+				vmxon();
+#endif
+			}
+			
 			env_run(&envs[k]);
 		}
 	}

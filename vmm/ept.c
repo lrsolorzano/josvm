@@ -47,10 +47,166 @@ static inline int epte_present(epte_t epte)
 //       bit at the last level entry is sufficient (and the bookkeeping is much simpler).
 static int ept_lookup_gpa(epte_t* eptrt, void *gpa, 
 			  int create, epte_t **epte_out) {
-    /* Your code here */
-    panic("ept_lookup_gpa not implemented\n");
-    return 0;
+/* Your code here */
+	
+	if (eptrt == NULL)
+		return -E_INVAL;
 
+
+        //////////////
+	//Level 1/////
+	//////////////
+
+//Start by finding the PML4 Entry using the ept pointer and gpa
+
+// Per intel documentation, bits 63-52 are 0
+	// bits 51 -12 of the pml4e are from 51-12 of the eptrt
+	// bits 11-3 come from 47-39 of the gpa
+	// bits 0, 1, and 2 are read, write, and execute permissions respectively.
+
+	epte_t * ept_pml4e = 0;
+	//Set bits 51-12.  Bits 63-52 should be zero'd in eptrt but we can double check that later if necessary.
+	ept_pml4e = (epte_t *) (epte_addr( (epte_t)eptrt));
+	//Set bits 11-3 with 47-39 of the gpa
+	ept_pml4e = (epte_t *)  ((uint64_t) ept_pml4e |( (ADDR_TO_IDX(gpa,3)) >>3 ));
+	
+	//Check  address to see if pointer to next level exists 
+
+	if (!epte_present(*ept_pml4e)) {
+
+		//If create == 0, return -E_NO_ENT.
+		//Otherwise, go ahead and create the next level of the ept page table.
+		if (create == 0) {
+			return -E_NO_ENT;
+		}
+		else {
+			//Allocate a new page zero'd out.
+			struct PageInfo * newPage = page_alloc(ALLOC_ZERO);
+			//Insert the page with a mapping for the kernel.  Should just need present and write permissions.
+			int res = page_insert(boot_pml4e, newPage,KADDR(page2pa(newPage)) , (PTE_P & PTE_W));
+			if (res != 0)
+				return -E_NO_MEM;
+			//Set the pointer to the next level (PDPTEs) to be the physical address alloc'd, and set __EPTE_FULL perms.
+			*ept_pml4e = page2pa(newPage) & __EPTE_FULL;
+		}
+		
+		
+	}
+
+	//By this point, *ept_pml4e should be populated with a valid pointer to the PDPT entries.
+
+	///////////////////////
+	//Level 2//////////////
+	///////////////////////
+	
+	//Find the correct entry in the PDPT table
+
+	//Set bits 51-12 from 51-12 of the pml4 entry
+	epte_t * ept_pdpte = (epte_t *) epte_addr((epte_t) *ept_pml4e);
+	//set bits 11-3 from 38-30 of the gpa
+	ept_pdpte = (epte_t *)  ((uint64_t) ept_pdpte | (ADDR_TO_IDX(gpa,2) >>3));
+
+	//Check address to see if pointer to next level exists.
+
+	if (!epte_present(*ept_pdpte)) {
+
+		//If create == 0, return -E_NO_ENT.
+		//Otherwise, go ahead and create the next level of the ept page table.
+		if ( create ==0 ) {
+			return -E_NO_ENT;
+		}
+		else {
+
+			//Allocate a new page zero'd out.
+			struct PageInfo * newPage = page_alloc(ALLOC_ZERO);
+			//Insert the page with a mapping for the kernel.  Should just need present and write permissions.
+			int res = page_insert(boot_pml4e, newPage,KADDR(page2pa(newPage)) , (PTE_P & PTE_W));
+			if (res != 0)
+				return -E_NO_MEM;
+			*ept_pdpte = (page2pa(newPage)) & __EPTE_FULL;
+			
+		}
+			
+	}
+
+	//By this point, *ept_pdpte should be populated with a valid physical addr ptr to the PDE table
+
+        //////////////
+	//Level 3/////
+	//////////////
+	
+	//Find the correct entry in the PDE table
+
+	//Set bits 51-12 from 51-12 of the pdpte
+	epte_t * ept_pde = (epte_t *) epte_addr( (epte_t)*ept_pdpte);
+	//set bits 11-3 from 29-21 of the gpa
+	ept_pde = (epte_t *)  ((uint64_t)ept_pde | (ADDR_TO_IDX(gpa,1) >>3));
+
+	if (!epte_present(*ept_pde)) {
+
+		//If create == 0, return -E_NO_ENT
+		//Otherwise, go ahead and create the next level of the ept page table.
+		if ( create ==0 ) {
+			return -E_NO_ENT;
+		}
+		else {
+
+			//Allocate a new page zero'd out.
+			struct PageInfo * newPage = page_alloc(ALLOC_ZERO);
+			//Insert the page with a mapping for the kernel.  Should just need present and write permissions.
+			int res = page_insert(boot_pml4e, newPage,KADDR(page2pa(newPage)) , (PTE_P & PTE_W));
+			if (res != 0)
+				return -E_NO_MEM;
+			*ept_pde = (page2pa(newPage)) & __EPTE_FULL;
+		}
+		
+		
+	}
+
+	//By this point, *ept_pde should now be populated with a valid physical addr ptr to a page table.
+
+	/////////////////////
+	//Level 4////////////
+	/////////////////////
+
+	
+	//Find the correct entry in the Page Table
+
+	//Set bits 51-12 from 51-12 of the pde
+	epte_t * ept_pt = (epte_t *) epte_addr((epte_t)*ept_pde);
+	//Set bits 11-3 from 20-12 of the gpa
+	ept_pt = (epte_t *)( (uint64_t)ept_pt | (ADDR_TO_IDX(gpa,0) >>3));
+
+	//Should not need to create the page if ept_pt isn't present.
+	/*
+	if (!epte_present(*ept_pt)) {
+
+		//If create == 0, return -E_NO_ENT
+		//Otherwise, go ahead and create the next level of the ept page table.
+		if ( create ==0 ) {
+			return -E_NO_ENT;
+		}
+		else {
+
+			//Allocate a new page zero'd out.
+			struct PageInfo * newPage = page_alloc(ALLOC_ZERO);
+			//Insert the page with a mapping for the kernel.  Should just need present and write permissions.
+			int res = page_insert(boot_pml4e, newPage,KADDR(page2pa(newPage)) , (PTE_P & PTE_W));
+			if (res != 0)
+				return -E_NO_MEM;
+			*ept_pt = (page2pa(newPage)) & __EPTE_FULL;
+		}
+		
+		}*/
+
+	*epte_out = ept_pt;
+
+	
+	
+
+//panic("ept_lookup_gpa not implemented\n");
+	return 0;
+	
 }
 
 void ept_gpa2hva(epte_t* eptrt, void *gpa, void **hva) {
@@ -104,10 +260,22 @@ void free_guest_mem(epte_t* eptrt) {
 //
 int ept_page_insert(epte_t* eptrt, struct PageInfo* pp, void* gpa, int perm) {
 
-    /* Your code here */
-    panic("ept_page_insert not implemented\n");
-    return 0;
+	/* Your code here */
+	//panic("ept_page_insert not implemented\n");
+	
+	epte_t* pt = NULL;
+	epte_t** pt_ptr = &pt;
+	
+	int res = ept_lookup_gpa (eptrt,gpa,1,pt_ptr);
+
+	pt = (epte_t *) page2pa(pp);
+
+	pt =(epte_t *) ((uint64_t)pt | perm);
+
+	return 0;
 }
+
+	
 
 // Map host virtual address hva to guest physical address gpa,
 // with permissions perm.  eptrt is a pointer to the extended
@@ -124,10 +292,20 @@ int ept_page_insert(epte_t* eptrt, struct PageInfo* pp, void* gpa, int perm) {
 int ept_map_hva2gpa(epte_t* eptrt, void* hva, void* gpa, int perm, 
         int overwrite) {
 
-    /* Your code here */
-    panic("ept_map_hva2gpa not implemented\n");
+	epte_t * pt = NULL;
+	epte_t** pt_ptr = &pt;
+	
+	int res = ept_lookup_gpa(eptrt, gpa,overwrite,pt_ptr );
 
-    return 0;
+	if (res ==0)
+		pt = (epte_t *)  PADDR(hva);
+	pt = (uint64_t *) ((uint64_t) pt | perm | __EPTE_IPAT | __EPTE_TYPE(EPTE_TYPE_WB));
+
+	
+    /* Your code here */
+    //panic("ept_map_hva2gpa not implemented\n");
+
+	return res;
 }
 
 int ept_alloc_static(epte_t *eptrt, struct VmxGuestInfo *ginfo) {

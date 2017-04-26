@@ -60,10 +60,16 @@ bool vmx_sel_resume(int num) {
 bool vmx_check_support() {
 	uint32_t eax, ebx, ecx, edx;
 	cpuid( 1, &eax, &ebx, &ecx, &edx );
-	/* Your code here */ 
-	panic ("vmx check not implemented\n");
-	cprintf("[VMM] VMX extension not supported.\n");
-	return false;
+	//panic ("vmx check not implemented\n");
+	//If VMX is enabled, bit 5 in ecx will be set to 1.
+	if (BIT(ecx, 5) != 1){
+		
+		
+		cprintf("[VMM] VMX extension not supported.\n");
+		return false;
+	}
+	else
+		return true;
 }
 
 /* This function reads the VMX-specific MSRs
@@ -81,7 +87,24 @@ bool vmx_check_support() {
  */
 bool vmx_check_ept() {
 	/* Your code here */
-	panic ("ept check not implemented\n");
+	//panic ("ept check not implemented\n");
+	//First check that the secondary VMX controls are active.
+	//Indicator is bit 31, so we shift to 63
+	uint64_t primary = read_msr(IA32_VMX_PROCBASED_CTLS);
+	
+	if(BIT(primary, 63) ==1) {
+
+		//Now check that EPT is available.  It's bit position 1 so we shift to 33
+		uint64_t secondary = read_msr(IA32_VMX_PROCBASED_CTLS2);
+		if (BIT(secondary,33) ==1) {
+			return true;
+		}
+		
+	}
+
+			
+	
+	
 	cprintf("[VMM] EPT extension not supported.\n");
 	return false;
 }

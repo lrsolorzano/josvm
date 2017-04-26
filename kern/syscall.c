@@ -452,8 +452,32 @@ sys_ept_map(envid_t srcenvid, void *srcva,
 	    envid_t guest, void* guest_pa, int perm)
 {
 		/* Your code here */
-		panic ("sys_ept_map not implemented");
-		return 0;
+
+	int r;
+	struct Env *es, *ed;
+	struct PageInfo *pp;
+	pte_t *ppte;
+
+	if (srcva >= (void*) UTOP)
+		return -E_INVAL;
+	if (srcva != ROUNDDOWN(srcva, PGSIZE) || guest_pa != ROUNDDOWN(guest_pa, PGSIZE))
+		return -E_INVAL;
+
+	if ((r = envid2env(srcenvid, &es, 1)) < 0
+            || (r = envid2env(guest, &ed, 1)) < 0)
+		return r;
+	if ((~perm & (PTE_U|PTE_P)) || (perm & ~PTE_SYSCALL))
+		return -E_INVAL;
+	if ((pp = page_lookup(es->env_pml4e, srcva, &ppte)) == 0)
+		return -E_INVAL;
+	if ((perm & PTE_W) && !(*ppte & PTE_W))
+		return -E_INVAL;
+	if ((r = ept_page_insert(ed->env_pml4e, pp, guest_pa, perm)) < 0)
+		return r;
+	return 0;
+
+	//panic ("sys_ept_map not implemented");
+
 }
 
 static envid_t
