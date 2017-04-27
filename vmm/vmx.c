@@ -495,6 +495,7 @@ void asm_vmrun(struct Trapframe *tf) {
 		"push %%rcx \n\t"
 		/* Set the VMCS rsp to the current top of the frame. */
 		/* Your code here */
+		"mov %%rsp, %%rbp \n\t"
 		"1: \n\t"
 		/* Reload cr2 if changed */
 		"mov %c[cr2](%0), %%rax \n\t"
@@ -517,8 +518,14 @@ void asm_vmrun(struct Trapframe *tf) {
 		 *
 		 */
 		/* Your code here */
+
+		
+		
+		
 		/* Enter guest mode */
-		/* Your code here:
+
+
+/* Your code here:
 		 * 
 		 * Test the condition code from rflags
 		 * to see if you need to execute a vmlaunch
@@ -655,7 +662,7 @@ int vmx_vmrun( struct Env *e ) {
 
 	vmcs_write64( VMCS_GUEST_RSP, curenv->env_tf.tf_rsp  );
 	vmcs_write64( VMCS_GUEST_RIP, curenv->env_tf.tf_rip );
-	panic ("asm vmrun incomplete\n");
+	//panic ("asm vmrun incomplete\n");
 	asm_vmrun( &e->env_tf );    
 	return 0;
 }

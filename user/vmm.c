@@ -4,6 +4,8 @@
 #include <inc/ept.h>
 #include <inc/stdio.h>
 
+//#include <vmm/ept.h>
+
 #define GUEST_KERN "/vmm/kernel"
 #define GUEST_BOOT "/vmm/boot"
 
@@ -15,62 +17,49 @@
 //
 // Return 0 on success, <0 on failure.
 //
+
+
 static int
 map_in_guest( envid_t guest, uintptr_t gpa, size_t memsz, 
 	      int fd, size_t filesz, off_t fileoffset ) {
 	/* Your code here */
 
-	char * theData = char[filesz];
+
+
+	uint8_t fileArray[filesz];
+	
+	uint8_t * theData = fileArray;
 
 	seek(fd, fileoffset);
 	read(fd, theData, filesz);
 
-	void * hva = NULL;
-
-	struct env * guestEnv;
-
-	envid2env(guest,&guestEnv,1)
+	//Align data and guest pointers to page boundaries.
+	theData = ROUNDDOWN(theData, PGSIZE);
+	gpa = ROUNDDOWN(gpa, PGSIZE);
 	
-	ept_gpa2hva(guestEnv->env_pml4,gpa, &hva);
 
-	//Need to insert/alloc the page if it doesn't exist.
-	if (hva == NULL) {
-		int res = ept_page_insert(guestEnv->env_pml4,page_alloc(ALLOC_ZERO), gpa, __EPTE_FULL);
-		ept_gpa2hva(guestEnv->env_pml4,gpa, &hva);
+	//Map in page by page.
+	for (int bytesMapped = 0; bytesMapped <= ROUNDUP(filesz,PGSIZE); bytesMapped += PGSIZE) {
+
+		
+		
+		int res = sys_ept_map(sys_getenvid(), theData, guest, (void *) gpa, __EPTE_FULL);
+
+
+		
+		//Error check.
+		if (res < 0)
+			return res;
+
+		//Align data and gpa ptrs to next page.
+		theData += PGSIZE;
+		gpa += PGSIZE;
+
 	}
 	
-	char * currHva = (char *) hva;
-	
-	for (int i = 0; i < filesz; i++) {
-
-		//Check to see if we've crossed onto another physical page.
-		//Gross.
-		if ((uint64_t) currHva % PGSIZE == 0) {
-			void * newHva = NULL;
-
-			gpa = gpa + i * 8;
-			
-			ept_gpa2hva(guestEnv->env_pml4, gpa, &newHva);
-
-			//Need to insert/alloc the page for gpa if it doesn't exist.
-			if (newHva == NULL) {
-				int res = ept_page_insert(guestEnv->env_pml4,page_alloc(ALLOC_ZERO), gpa, __EPTE_FULL);
-				ept_gpa2hva(guestEnv->env_pml4,gpa, &newHva);
-			}
-			
-			currHva = (char *) newHva;
-
-		}
-
-		*currHva = *theData;
-		currHva++;
-		theData++;
-				
-	}
-
 	return 0;
 
-	//return -E_NO_SYS;
+	
 
 	
 
@@ -85,20 +74,31 @@ map_in_guest( envid_t guest, uintptr_t gpa, size_t memsz,
 static int
 copy_guest_kern_gpa( envid_t guest, char* fname ) {
 
-	struct File * theFile = NULL;
+	
+	//struct File * theFile = NULL;
 	
 	int fd = open(fname, O_RDONLY);
 
-	file_open(fname, &theFile);
-	
-	uint8_t * theData = uint8_t[theFile->f_size];
+	struct Stat theStat;
+	struct Stat * statPtr = &theStat;
 
-	read(fd, (char *) theData,theFile->f_size );
+	//Retrieve the stat info about fd.  Need this to get file size later.
+	fstat(fd, statPtr);
+
+	
+	
+	//file_open(fname, &theFile);
+
+	uint8_t fileArray[statPtr->st_size];
+	
+	uint8_t * theData = fileArray;
+
+	read(fd, (char *) theData,statPtr->st_size);
 
 
 	//Reusing some code from env.c here --
 	
-	struct ELF * theElf = (struct Elf *) theData;
+	struct Elf * theElf = (struct Elf *) theData;
 
 	if (theElf->e_magic!= ELF_MAGIC)
 		cprintf("\n\n\n Can't load Elf !!! \n\n\n)");
@@ -110,28 +110,20 @@ copy_guest_kern_gpa( envid_t guest, char* fname ) {
 		if ( ph->p_type == ELF_PROG_LOAD) {
 
 			// address to load into
-			uint8_t * cursor = (uint8_t *) ph->p_va;
+			uint8_t * dest = (uint8_t *) ph->p_va;
 
 			// address to load from
-			uint8_t * index = theData + ph->p_offset;
+			uint8_t * src = theData + ph->p_offset;
 			
-			// the actual size is ph->p_filesz
-			/*for (i = 0; i < ph->p_memsz; i++) {
-				if (i < ph->p_filesz)
-					*(cursor+i) = *(index+i);	
-				else
-					*(cursor+i) = 0;
-					}*/
-
-			map_in_guest(guest, (uint64_t) cursor, ph->p_memsz, fd, ph->p_memsz, ph->p_offset); 
+			map_in_guest(guest, (uint64_t) dest, ph->p_memsz, fd, ph->p_memsz, ph->p_offset); 
 
 			
 		}
 	}
-	
+	return 0;
 	
 	/* Your code here */
-	return -E_NO_SYS;
+	//return -E_NO_SYS;
 }
 
 void
