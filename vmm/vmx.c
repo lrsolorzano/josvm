@@ -410,6 +410,7 @@ void vmexit() {
 	static uint32_t host_vector;
 	// Get the reason for VMEXIT from the VMCS.
 	// Your code here.
+	exit_reason = vmcs_read32(VMCS_32BIT_VMEXIT_REASON);
 
 	//cprintf( "---VMEXIT Reason: %d---\n", exit_reason ); 
 	/* vmcs_dump_cpu(); */

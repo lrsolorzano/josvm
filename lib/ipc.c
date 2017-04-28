@@ -72,7 +72,16 @@ ipc_send(envid_t to_env, uint32_t val, void *pg, int perm)
 int32_t
 ipc_host_recv(void *pg) {
 	// LAB 8: Your code here.
-	panic("ipc_recv not implemented in VM guest");
+	int32_t ret;
+	uintptr_t gpa = PTE_ADDR(uvpt[PGNUM(pg)]);
+
+	asm volatile("vmcall\n"
+		     : "=a" (ret)
+		     : "a" (VMX_VMCALL_IPCRECV),
+		       "d" (gpa)
+		     : "cc", "memory");
+	
+	return ret;
 }
 
 // Access to host IPC interface through VMCALL.
@@ -81,7 +90,16 @@ void
 ipc_host_send(envid_t to_env, uint32_t val, void *pg, int perm)
 {
 	// LAB 8: Your code here.
-	panic("ipc_send not implemented in VM guest");
+	uintptr_t gpa = PTE_ADDR(uvpt[PGNUM(pg)]);
+
+	asm volatile("vmcall\n"
+		     : 
+		     : "a" (VMX_VMCALL_IPCSEND),
+		       "d" (to_env),
+		       "c" (val),
+		       "b" (gpa),
+		       "D" (perm)
+		     : "cc", "memory");
 }
 
 #endif // VMM_GUEST

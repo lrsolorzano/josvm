@@ -105,8 +105,29 @@ void free_guest_mem(epte_t* eptrt) {
 int ept_page_insert(epte_t* eptrt, struct PageInfo* pp, void* gpa, int perm) {
 
     /* Your code here */
-    panic("ept_page_insert not implemented\n");
-    return 0;
+	epte_t *ept;
+	int r;
+
+	r = ept_lookup_gpa(eptrt, gpa, 1, &ept);
+	if (r < 0) 
+		panic("ept lookup failed!\n");
+	
+	if (epte_present(*ept)) {
+		if (epte_addr(*ept) == page2pa(pp))
+			*ept = (*ept & ~7) | perm;
+		else {
+			page_decref(pa2page(epte_addr(*ept)));
+			*ept = page2pa(pp) | perm;
+			pp->pp_ref++;
+		}
+		tlbflush();
+	}
+	else {
+		*ept = page2pa(pp) | perm;
+		pp->pp_ref++;
+	}
+		
+	return 0;
 }
 
 // Map host virtual address hva to guest physical address gpa,

@@ -216,10 +216,26 @@ handle_ioinstr(struct Trapframe *tf, struct VmxGuestInfo *ginfo) {
 bool
 handle_cpuid(struct Trapframe *tf, struct VmxGuestInfo *ginfo)
 {
-	/* Your code here */
-	cprintf("Handle cpuid not implemented\n");
-	return false;
-
+	uint32_t reg_eax, reg_ebx, reg_ecx, reg_edx;
+	
+	reg_eax = (uint32_t)(0xffffffff & tf->tf_regs.reg_rax);
+	
+        __asm __volatile("movl %4, %%eax\n\t"
+			 "cpuid"	
+			: "=a" (reg_eax), "=b" (reg_ebx), "=c" (reg_ecx), "=d" (reg_edx) 
+			: "r" (reg_eax)
+			: "%ebx", "%ecx", "%edx");
+	
+	if (tf->tf_regs.reg_rax == 1)
+		// clear the bit 5 of ecx to hide the presence of VMX
+		reg_ecx &= 0xffffffdf;
+	
+	tf->tf_regs.reg_rax = (uint64_t)reg_eax;
+	tf->tf_regs.reg_rbx = (uint64_t)reg_ebx;
+	tf->tf_regs.reg_rcx = (uint64_t)reg_ecx;
+	tf->tf_regs.reg_rdx = (uint64_t)reg_edx;
+	
+	return true;
 }
 
 // Handle vmcall traps from the guest.
@@ -236,14 +252,13 @@ bool
 handle_vmcall(struct Trapframe *tf, struct VmxGuestInfo *gInfo, uint64_t *eptrt)
 {
 	bool handled = false;
-	multiboot_info_t mbinfo;
 	int perm, r;
 	void *gpa_pg, *hva_pg;
 	envid_t to_env;
 	uint32_t val;
 	// phys address of the multiboot map in the guest.
 	uint64_t multiboot_map_addr = 0x6000;
-	switch(tf->tf_regs.reg_rax) {
+	switch (tf->tf_regs.reg_rax) {
 	case VMX_VMCALL_MBMAP:
 		// Craft a multiboot (e820) memory map for the guest.
 		//
@@ -255,17 +270,74 @@ handle_vmcall(struct Trapframe *tf, struct VmxGuestInfo *gInfo, uint64_t *eptrt)
 		// Copy the mbinfo and memory_map_t (segment descriptions) into the guest page, and return
 		//   a pointer to this region in rbx (as a guest physical address).
 		/* Your code here */
-		cprintf("e820 map hypercall not implemented\n");	    
-		handled = false;
+		multiboot_info_t *minfo_ptr;
+		memory_map_t *m_map;
+		void *hva;
+
+		ept_gpa2hva(eptrt, (void*)multiboot_map_addr, &hva);
+
+		if (hva == NULL) {
+			struct PageInfo *p = page_alloc(0);
+			perm = 0x11; /* both read and write permission */
+			ept_page_insert(eptrt, p, (void*)multiboot_map_addr, perm);
+			hva = page2kva(p);  
+		}
+
+		// set up multiboot_info_t structure
+		minfo_ptr = (multiboot_info_t*)hva;
+		minfo_ptr->flags = MB_FLAG_MMAP;
+		minfo_ptr->mmap_length = 3 * sizeof(memory_map_t);
+		minfo_ptr->mmap_addr = (uint32_t)(hva + sizeof(multiboot_info_t));
+
+		// set up memory_map_t structure
+		m_map = (memory_map_t*)minfo_ptr->mmap_addr;
+		memset(m_map, 0, minfo_ptr->mmap_length);
+		
+		m_map[0].size = 20;
+		m_map[0].base_addr_low = 0;
+		m_map[0].base_addr_high = 0;
+		m_map[0].length_low = 655360;
+		m_map[0].length_high = 0;
+		m_map[0].type = MB_TYPE_USABLE;
+		m_map[1].size = 20;
+		m_map[1].base_addr_low = 0xA0000;
+		m_map[1].base_addr_high = 0;
+		m_map[1].length_low = 393216;
+		m_map[1].length_high = 0;
+		m_map[1].type = MB_TYPE_RESERVED;
+		m_map[2].size = 20;
+		m_map[2].base_addr_low = 0x100000;
+		m_map[2].base_addr_high = 0;
+		m_map[2].length_low = 267386880;
+		m_map[2].length_high = 0;
+		m_map[2].type = MB_TYPE_USABLE;
+			
+		tf->tf_regs.reg_rbx = multiboot_map_addr;
+
+		handled = true;
 		break;
+
 	case VMX_VMCALL_IPCSEND:
 		// Issue the sys_ipc_send call to the host.
 		// 
 		// If the requested environment is the HOST FS, this call should
 		//  do this translation.
 		/* Your code here */
-		cprintf("IPC send hypercall not implemented\n");	    
-		handled = false;
+		if (tf->tf_regs.reg_rdx == VMX_HOST_FS_ENV) {
+			envid_t fs_env;
+
+			for (i = 0; i < NENV; i++) {
+				if (envs[i].env_type == ENV_TYPE_FS)
+					fs_env = envs[i].env_id;
+			}
+
+			syscall(SYS_ipc_try_send, fs_env, 
+				tf->tf_regs.reg_rcx, tf->tf_regs.reg_rbx, 
+				tf->tf_regs.reg_rdi, 0);
+			handled = true;
+		}
+		else 
+			handled = false;	
 		break;
 
 	case VMX_VMCALL_IPCRECV:
@@ -273,31 +345,36 @@ handle_vmcall(struct Trapframe *tf, struct VmxGuestInfo *gInfo, uint64_t *eptrt)
 		// NB: because recv can call schedule, clobbering the VMCS, 
 		// you should go ahead and increment rip before this call.
 		/* Your code here */
-		cprintf("IPC recv hypercall not implemented\n");	    
-		handled = false;
+		tf->tf_rip += 3;
+		syscall(SYS_ipc_recv, tf->tf_regs.reg_rdx, 0, 0, 0, 0);
+		handled = true;
 		break;
+
 	case VMX_VMCALL_LAPICEOI:
 		lapic_eoi();
 		handled = true;
 		break;
+
 	case VMX_VMCALL_BACKTOHOST:
 		cprintf("Now back to the host, VM halt in the background, run vmmanager to resume the VM.\n");
 		curenv->env_status = ENV_NOT_RUNNABLE;	//mark the guest not runable
 		ENV_CREATE(user_sh, ENV_TYPE_USER);	//create a new host shell
 		handled = true;
 		break;	
+
 	case VMX_VMCALL_GETDISKIMGNUM:	//alloc a number to guest
 		tf->tf_regs.reg_rax = vmdisk_number;
 		handled = true;
 		break;
          
 	}
-	if(handled) {
+	if (handled) {
 		/* Advance the program counter by the length of the vmcall instruction. 
 		 * 
 		 * Hint: The TA solution does not hard-code the length of the vmcall instruction.
 		 */
 		/* Your code here */
+		tf->tf_rip += 3;
 	}
 	return handled;
 }

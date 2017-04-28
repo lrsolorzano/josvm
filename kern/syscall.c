@@ -318,45 +318,77 @@ sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 		/* cprintf("[%08x] not recieving!\n", e->env_id); */
 		return -E_IPC_NOT_RECV;
 	}
-    
 
-		if (srcva < (void*) UTOP && e->env_ipc_dstva < (void*) UTOP) {
+	if ((~perm & (PTE_U|PTE_P)) || (perm & ~PTE_SYSCALL)) {
+		cprintf("[%08x] bad perm %x in sys_ipc_try_send\n", 
+			curenv->env_id, perm);
+		return -E_INVAL;
+	}
 
-			if ((~perm & (PTE_U|PTE_P)) || (perm & ~PTE_SYSCALL)) {
-				cprintf("[%08x] bad perm %x in sys_ipc_try_send\n", curenv->env_id, perm);
-				return -E_INVAL;
-			}
+	if (curenv->env_type == ENV_TYPE_GUEST) {
+		epte_t *epte;
 
-			pp = page_lookup(curenv->env_pml4e, srcva, &ppte);
-			if (pp == 0) {
-				cprintf("[%08x] page_lookup %08x failed in sys_ipc_try_send\n", curenv->env_id, srcva);
-				return -E_INVAL;
-			}
-
-			if ((perm & PTE_W) && !(*ppte & PTE_W)) {
-				cprintf("[%08x] attempt to send read-only page read-write in sys_ipc_try_send\n", curenv->env_id);
-				return -E_INVAL;
-			}
-
-			r = page_insert(e->env_pml4e, pp, e->env_ipc_dstva, perm);
-			if (r < 0) {
-				cprintf("[%08x] page_insert %08x failed in sys_ipc_try_send (%e)\n", curenv->env_id, srcva, r);
-				return r;
-			}
-
-			e->env_ipc_perm = perm;
-		} else {
-			e->env_ipc_perm = 0;
+		r = ept_lookup_gpa(curenv->env_pml4e, srcva, 0, &epte);
+		if (r < 0) {
+			cprintf("Bad guest physical address.\n");
+			return r;
+		}
+	
+		pp = pa2page(*epte & EPTE_ADDR);
+	}
+	else {
+		if (srcva >= (void*)UTOP) {
+			cprintf("Bad process sending virtual address.\n");
+			return -E_INVAL;
+		}
+			
+		pp = page_lookup(curenv->env_pml4e, srcva, &ppte);
+		if (pp == 0) {
+			cprintf("[%08x] page_lookup %08x failed in 
+				sys_ipc_try_send\n", curenv->env_id, srcva);
+			return -E_INVAL;
 		}
 
-		e->env_ipc_recving = 0;
-		e->env_ipc_from = curenv->env_id;
-		e->env_ipc_value = value;
-		e->env_tf.tf_regs.reg_rax = 0;
-		e->env_status = ENV_RUNNABLE;
-
-		return 0;
+		if ((perm & PTE_W) && !(*ppte & PTE_W)) {
+			cprintf("[%08x] attempt to send read-only page 
+			read-write in sys_ipc_try_send\n", curenv->env_id);
+			return -E_INVAL;
+		}
 	}
+
+	if (e->env_type == ENV_TYPE_GUEST) {
+		// TODO: should the permission for ept be 0x11?
+		r = ept_page_insert(e->env_pml4e, pp, 
+					e->env_ipc_dstva, 0x11); 
+		if (r < 0) {
+			cprintf("[%08x] page_insert %08x failed in 
+			sys_ipc_try_send (%e)\n", curenv->env_id, srcva, r);
+			return r;
+		}
+	}
+	else {
+		if (e->env_ipc_dstva >= (void*)UTOP) {
+			cprintf("Bad process receiving virtual address.\n");
+			return -E_INVAL;
+		}
+		
+		r = page_insert(e->env_pml4e, pp, e->env_ipc_dstva, perm);
+		if (r < 0) {
+			cprintf("[%08x] page_insert %08x failed in 
+			sys_ipc_try_send (%e)\n", curenv->env_id, srcva, r);
+			return r;
+		}
+	}
+		
+	e->env_ipc_perm = perm;
+	e->env_ipc_recving = 0;
+	e->env_ipc_from = curenv->env_id;
+	e->env_ipc_value = value;
+	e->env_tf.tf_regs.reg_rax = 0;
+	e->env_status = ENV_RUNNABLE;
+
+	return 0;
+}
 
 // Block until a value is ready.  Record that you want to receive
 // using the env_ipc_recving and env_ipc_dstva fields of struct Env,

@@ -59,9 +59,9 @@ bc_pgfault(struct UTrapframe *utf)
 		panic("in bc_pgfault, ide_read: %e", r);
 
 #else  // VMM GUEST
-
-	/* Your code here */
-	panic("Host read not implemented!\n");
+	if ((r = host_read(blockno * BLKSECTS, addr, BLKSECTS)) < 0)
+		panic("in bc_pgfault, host_read: %e", r);
+		
 #endif // VMM_GUEST
 
 
@@ -98,9 +98,7 @@ flush_block(void *addr)
 #ifndef VMM_GUEST
 	ide_write(blockno * BLKSECTS, (void*) addr, BLKSECTS);
 #else
-
-	/* Your code here */
-	panic("Host write not implemented!\n");
+	host_write(blockno * BLKSECTS, (void*) addr, BLKSECTS);
 
 #endif
 	sys_page_map(0, addr, 0, addr, uvpt[PGNUM(addr)] & PTE_SYSCALL);
