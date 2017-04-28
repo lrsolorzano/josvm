@@ -325,6 +325,7 @@ sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 		return -E_INVAL;
 	}
 
+#ifndef VMM_GUEST
 	if (curenv->env_type == ENV_TYPE_GUEST) {
 		epte_t *epte;
 
@@ -337,6 +338,7 @@ sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 		pp = pa2page(*epte & EPTE_ADDR);
 	}
 	else {
+#endif
 		if (srcva >= (void*)UTOP) {
 			cprintf("Bad process sending virtual address.\n");
 			return -E_INVAL;
@@ -344,16 +346,17 @@ sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 			
 		pp = page_lookup(curenv->env_pml4e, srcva, &ppte);
 		if (pp == 0) {
-			cprintf("[%08x] page_lookup %08x failed in 
+			cprintf("[%08x] page_lookup %08x failed in \
 				sys_ipc_try_send\n", curenv->env_id, srcva);
 			return -E_INVAL;
 		}
 
 		if ((perm & PTE_W) && !(*ppte & PTE_W)) {
-			cprintf("[%08x] attempt to send read-only page 
+			cprintf("[%08x] attempt to send read-only page \
 			read-write in sys_ipc_try_send\n", curenv->env_id);
 			return -E_INVAL;
 		}
+#ifndef VMM_GUEST
 	}
 
 	if (e->env_type == ENV_TYPE_GUEST) {
@@ -361,12 +364,13 @@ sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 		r = ept_page_insert(e->env_pml4e, pp, 
 					e->env_ipc_dstva, 0x11); 
 		if (r < 0) {
-			cprintf("[%08x] page_insert %08x failed in 
+			cprintf("[%08x] page_insert %08x failed in \
 			sys_ipc_try_send (%e)\n", curenv->env_id, srcva, r);
 			return r;
 		}
 	}
 	else {
+#endif
 		if (e->env_ipc_dstva >= (void*)UTOP) {
 			cprintf("Bad process receiving virtual address.\n");
 			return -E_INVAL;
@@ -374,11 +378,13 @@ sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 		
 		r = page_insert(e->env_pml4e, pp, e->env_ipc_dstva, perm);
 		if (r < 0) {
-			cprintf("[%08x] page_insert %08x failed in 
+			cprintf("[%08x] page_insert %08x failed in \
 			sys_ipc_try_send (%e)\n", curenv->env_id, srcva, r);
 			return r;
 		}
+#ifndef VMM_GUEST
 	}
+#endif
 		
 	e->env_ipc_perm = perm;
 	e->env_ipc_recving = 0;

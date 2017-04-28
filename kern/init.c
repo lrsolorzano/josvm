@@ -125,7 +125,7 @@ i386_init(void)
 	test_ept_map();
 #endif
 	//ENV_CREATE(user_testtime, ENV_TYPE_USER);
-	ENV_CREATE(user_icode, ENV_TYPE_USER);
+	ENV_CREATE(user_vmm, ENV_TYPE_USER);
 #endif // TEST*
 
 	// Should not be necessary - drains keyboard because interrupt has given up.

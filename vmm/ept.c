@@ -45,7 +45,7 @@ static inline int epte_present(epte_t epte)
 // Hint: Set the permissions of intermediate ept entries to __EPTE_FULL.
 //       The hardware ANDs the permissions at each level, so removing a permission
 //       bit at the last level entry is sufficient (and the bookkeeping is much simpler).
-static int ept_lookup_gpa(epte_t* eptrt, void *gpa, 
+int ept_lookup_gpa(epte_t* eptrt, void *gpa, 
 			  int create, epte_t **epte_out) {
 /* Your code here */
 	

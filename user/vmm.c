@@ -27,8 +27,8 @@ map_in_guest( envid_t guest, uintptr_t gpa, size_t memsz,
 
 
 	uint8_t fileArray[filesz];
-	
 	uint8_t * theData = fileArray;
+	int bytesMapped;
 
 	seek(fd, fileoffset);
 	read(fd, theData, filesz);
@@ -39,7 +39,7 @@ map_in_guest( envid_t guest, uintptr_t gpa, size_t memsz,
 	
 
 	//Map in page by page.
-	for (int bytesMapped = 0; bytesMapped <= ROUNDUP(filesz,PGSIZE); bytesMapped += PGSIZE) {
+	for (bytesMapped = 0; bytesMapped <= ROUNDUP(filesz,PGSIZE); bytesMapped += PGSIZE) {
 
 		
 		

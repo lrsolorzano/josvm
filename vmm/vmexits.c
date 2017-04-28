@@ -25,6 +25,7 @@ void
 vmx_incr_vmdisk_number() {
 	vmdisk_number++;
 }
+
 bool
 find_msr_in_region(uint32_t msr_idx, uintptr_t *area, int area_sz, struct vmx_msr_entry **msr_entry) {
 	struct vmx_msr_entry *entry = (struct vmx_msr_entry *)area;
@@ -220,11 +221,9 @@ handle_cpuid(struct Trapframe *tf, struct VmxGuestInfo *ginfo)
 	
 	reg_eax = (uint32_t)(0xffffffff & tf->tf_regs.reg_rax);
 	
-        __asm __volatile("movl %4, %%eax\n\t"
-			 "cpuid"	
-			: "=a" (reg_eax), "=b" (reg_ebx), "=c" (reg_ecx), "=d" (reg_edx) 
-			: "r" (reg_eax)
-			: "%ebx", "%ecx", "%edx");
+        asm volatile("cpuid"	
+		: "=a" (reg_eax), "=b" (reg_ebx), "=c" (reg_ecx), "=d" (reg_edx)
+		: "a" (reg_eax));
 	
 	if (tf->tf_regs.reg_rax == 1)
 		// clear the bit 5 of ecx to hide the presence of VMX
@@ -253,11 +252,13 @@ handle_vmcall(struct Trapframe *tf, struct VmxGuestInfo *gInfo, uint64_t *eptrt)
 {
 	bool handled = false;
 	int perm, r;
-	void *gpa_pg, *hva_pg;
+	void *hva;
 	envid_t to_env;
-	uint32_t val;
+	uint64_t val, i;
 	// phys address of the multiboot map in the guest.
 	uint64_t multiboot_map_addr = 0x6000;
+	multiboot_info_t *minfo_ptr;
+	memory_map_t *m_map;
 	switch (tf->tf_regs.reg_rax) {
 	case VMX_VMCALL_MBMAP:
 		// Craft a multiboot (e820) memory map for the guest.
@@ -270,10 +271,6 @@ handle_vmcall(struct Trapframe *tf, struct VmxGuestInfo *gInfo, uint64_t *eptrt)
 		// Copy the mbinfo and memory_map_t (segment descriptions) into the guest page, and return
 		//   a pointer to this region in rbx (as a guest physical address).
 		/* Your code here */
-		multiboot_info_t *minfo_ptr;
-		memory_map_t *m_map;
-		void *hva;
-
 		ept_gpa2hva(eptrt, (void*)multiboot_map_addr, &hva);
 
 		if (hva == NULL) {
@@ -287,10 +284,11 @@ handle_vmcall(struct Trapframe *tf, struct VmxGuestInfo *gInfo, uint64_t *eptrt)
 		minfo_ptr = (multiboot_info_t*)hva;
 		minfo_ptr->flags = MB_FLAG_MMAP;
 		minfo_ptr->mmap_length = 3 * sizeof(memory_map_t);
-		minfo_ptr->mmap_addr = (uint32_t)(hva + sizeof(multiboot_info_t));
+		minfo_ptr->mmap_addr = (uint64_t)(hva + sizeof(multiboot_info_t));
 
 		// set up memory_map_t structure
-		m_map = (memory_map_t*)minfo_ptr->mmap_addr;
+		val = (uint64_t)minfo_ptr->mmap_addr;
+		m_map = (memory_map_t*)val;
 		memset(m_map, 0, minfo_ptr->mmap_length);
 		
 		m_map[0].size = 20;
