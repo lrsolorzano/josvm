@@ -24,6 +24,8 @@ int ept_page_insert(epte_t* eptrt, struct PageInfo* pp, void* gpa, int perm);
 #define EPTE_ADDR	(~(PGSIZE - 1))
 #define EPTE_FLAGS	(PGSIZE - 1)
 
+//Take the 9 bits starting at bit index 12 + 9 * n.
+//Ex ADDR_TO_IDX(pa,3) retrieves the 9 bits starting at index 39 in pa.
 #define ADDR_TO_IDX(pa, n) \
     ((((uint64_t) (pa)) >> (12 + 9 * (n))) & ((1 << 9) - 1))
 

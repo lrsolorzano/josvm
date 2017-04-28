@@ -4,6 +4,8 @@
 #include <inc/ept.h>
 #include <inc/stdio.h>
 
+//#include <vmm/ept.h>
+
 #define GUEST_KERN "/vmm/kernel"
 #define GUEST_BOOT "/vmm/boot"
 
@@ -15,11 +17,51 @@
 //
 // Return 0 on success, <0 on failure.
 //
+
+
 static int
 map_in_guest( envid_t guest, uintptr_t gpa, size_t memsz, 
 	      int fd, size_t filesz, off_t fileoffset ) {
 	/* Your code here */
-	return -E_NO_SYS;
+
+
+
+	uint8_t fileArray[filesz];
+	
+	uint8_t * theData = fileArray;
+
+	seek(fd, fileoffset);
+	read(fd, theData, filesz);
+
+	//Align data and guest pointers to page boundaries.
+	theData = ROUNDDOWN(theData, PGSIZE);
+	gpa = ROUNDDOWN(gpa, PGSIZE);
+	
+
+	//Map in page by page.
+	for (int bytesMapped = 0; bytesMapped <= ROUNDUP(filesz,PGSIZE); bytesMapped += PGSIZE) {
+
+		
+		
+		int res = sys_ept_map(sys_getenvid(), theData, guest, (void *) gpa, __EPTE_FULL);
+
+
+		
+		//Error check.
+		if (res < 0)
+			return res;
+
+		//Align data and gpa ptrs to next page.
+		theData += PGSIZE;
+		gpa += PGSIZE;
+
+	}
+	
+	return 0;
+
+	
+
+	
 
 } 
 
@@ -32,8 +74,56 @@ map_in_guest( envid_t guest, uintptr_t gpa, size_t memsz,
 static int
 copy_guest_kern_gpa( envid_t guest, char* fname ) {
 
+	
+	//struct File * theFile = NULL;
+	
+	int fd = open(fname, O_RDONLY);
+
+	struct Stat theStat;
+	struct Stat * statPtr = &theStat;
+
+	//Retrieve the stat info about fd.  Need this to get file size later.
+	fstat(fd, statPtr);
+
+	
+	
+	//file_open(fname, &theFile);
+
+	uint8_t fileArray[statPtr->st_size];
+	
+	uint8_t * theData = fileArray;
+
+	read(fd, (char *) theData,statPtr->st_size);
+
+
+	//Reusing some code from env.c here --
+	
+	struct Elf * theElf = (struct Elf *) theData;
+
+	if (theElf->e_magic!= ELF_MAGIC)
+		cprintf("\n\n\n Can't load Elf !!! \n\n\n)");
+	
+	struct Proghdr * ph = (struct Proghdr *)((uint8_t *) theElf + theElf->e_phoff);
+	struct Proghdr * eph = ph +theElf->e_phnum;
+	
+	for (; ph < eph; ph++) {
+		if ( ph->p_type == ELF_PROG_LOAD) {
+
+			// address to load into
+			uint8_t * dest = (uint8_t *) ph->p_va;
+
+			// address to load from
+			uint8_t * src = theData + ph->p_offset;
+			
+			map_in_guest(guest, (uint64_t) dest, ph->p_memsz, fd, ph->p_memsz, ph->p_offset); 
+
+			
+		}
+	}
+	return 0;
+	
 	/* Your code here */
-	return -E_NO_SYS;
+	//return -E_NO_SYS;
 }
 
 void
