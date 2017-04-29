@@ -20,49 +20,36 @@
 
 
 static int
-map_in_guest( envid_t guest, uintptr_t gpa, size_t memsz, 
-	      int fd, size_t filesz, off_t fileoffset ) {
-	/* Your code here */
+map_in_guest(envid_t guest, uintptr_t gpa, size_t memsz, 
+	      int fd, size_t filesz, off_t fileoffset) {
 
-
-
-	uint8_t fileArray[filesz];
-	uint8_t * theData = fileArray;
-	int bytesMapped;
-
-	seek(fd, fileoffset);
-	read(fd, theData, filesz);
-
-	//Align data and guest pointers to page boundaries.
-	theData = ROUNDDOWN(theData, PGSIZE);
-	gpa = ROUNDDOWN(gpa, PGSIZE);
+	uint8_t *f_arr = PFTEMP;
+	int i, r, datasz;
 	
+	for (i = 0, datasz = filesz; i < memsz; i += PGSIZE) {
+		sys_page_alloc(0, f_arr, PTE_P|PTE_U|PTE_W);
+		seek(fd, fileoffset + i);
 
-	//Map in page by page.
-	for (bytesMapped = 0; bytesMapped <= ROUNDUP(filesz,PGSIZE); bytesMapped += PGSIZE) {
+		if (datasz >=  PGSIZE) {
+			read(fd, f_arr, PGSIZE);
+			datasz -= PGSIZE;	
+		}
+		else {
+			if (datasz == 0)
+				memset(f_arr, 0, PGSIZE);
+			else {
+				read(fd, f_arr, datasz);
+				memset(f_arr + datasz, 0, PGSIZE - datasz);
+				datasz = 0;
+			}
+		}
 
-		
-		
-		int res = sys_ept_map(sys_getenvid(), theData, guest, (void *) gpa, __EPTE_FULL);
-
-
-		
-		//Error check.
-		if (res < 0)
-			return res;
-
-		//Align data and gpa ptrs to next page.
-		theData += PGSIZE;
-		gpa += PGSIZE;
-
+		r = sys_ept_map(sys_getenvid(), f_arr, 
+			guest, (void *)gpa, __EPTE_FULL);
+		sys_page_unmap(0, f_arr);
 	}
-	
+
 	return 0;
-
-	
-
-	
-
 } 
 
 // Read the ELF headers of kernel file specified by fname,
@@ -72,58 +59,27 @@ map_in_guest( envid_t guest, uintptr_t gpa, size_t memsz,
 //
 // Hint: compare with ELF parsing in env.c, and use map_in_guest for each segment.
 static int
-copy_guest_kern_gpa( envid_t guest, char* fname ) {
-
-	
+copy_guest_kern_gpa(envid_t guest, char* fname) {
 	//struct File * theFile = NULL;
-	
 	int fd = open(fname, O_RDONLY);
+	struct Elf elfh;
+	struct Proghdr ph;
+	int i, offset;
 
-	struct Stat theStat;
-	struct Stat * statPtr = &theStat;
+	read(fd, &elfh, sizeof(struct Elf));
 
-	//Retrieve the stat info about fd.  Need this to get file size later.
-	fstat(fd, statPtr);
-
-	
-	
-	//file_open(fname, &theFile);
-
-	uint8_t fileArray[statPtr->st_size];
-	
-	uint8_t * theData = fileArray;
-
-	read(fd, (char *) theData,statPtr->st_size);
-
-
-	//Reusing some code from env.c here --
-	
-	struct Elf * theElf = (struct Elf *) theData;
-
-	if (theElf->e_magic!= ELF_MAGIC)
+	if (elfh.e_magic != ELF_MAGIC)
 		cprintf("\n\n\n Can't load Elf !!! \n\n\n)");
 	
-	struct Proghdr * ph = (struct Proghdr *)((uint8_t *) theElf + theElf->e_phoff);
-	struct Proghdr * eph = ph +theElf->e_phnum;
-	
-	for (; ph < eph; ph++) {
-		if ( ph->p_type == ELF_PROG_LOAD) {
-
-			// address to load into
-			uint8_t * dest = (uint8_t *) ph->p_va;
-
-			// address to load from
-			uint8_t * src = theData + ph->p_offset;
-			
-			map_in_guest(guest, (uint64_t) dest, ph->p_memsz, fd, ph->p_memsz, ph->p_offset); 
-
-			
-		}
+	for (i = 0, offset = elfh.e_phoff; i < elfh.e_phnum; i++) {
+		seek(fd, offset);
+		read(fd, &ph, sizeof(struct Proghdr));
+		map_in_guest(guest, ph.p_pa, ph.p_memsz, fd, 
+					ph.p_filesz, ph.p_offset); 
+		offset += sizeof(struct Proghdr);
 	}
-	return 0;
 	
-	/* Your code here */
-	//return -E_NO_SYS;
+	return 0;
 }
 
 void

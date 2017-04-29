@@ -319,12 +319,6 @@ sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 		return -E_IPC_NOT_RECV;
 	}
 
-	if ((~perm & (PTE_U|PTE_P)) || (perm & ~PTE_SYSCALL)) {
-		cprintf("[%08x] bad perm %x in sys_ipc_try_send\n", 
-			curenv->env_id, perm);
-		return -E_INVAL;
-	}
-
 #ifndef VMM_GUEST
 	if (curenv->env_type == ENV_TYPE_GUEST) {
 		epte_t *epte;
@@ -340,8 +334,8 @@ sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 	else {
 #endif
 		if (srcva >= (void*)UTOP) {
-			cprintf("Bad process sending virtual address.\n");
-			return -E_INVAL;
+			e->env_ipc_perm = 0;
+			goto ipc_end; 		
 		}
 			
 		pp = page_lookup(curenv->env_pml4e, srcva, &ppte);
@@ -372,8 +366,8 @@ sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 	else {
 #endif
 		if (e->env_ipc_dstva >= (void*)UTOP) {
-			cprintf("Bad process receiving virtual address.\n");
-			return -E_INVAL;
+			e->env_ipc_perm = 0;
+			goto ipc_end; 		
 		}
 		
 		r = page_insert(e->env_pml4e, pp, e->env_ipc_dstva, perm);
@@ -385,8 +379,14 @@ sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 #ifndef VMM_GUEST
 	}
 #endif
+	if ((~perm & (PTE_U|PTE_P)) || (perm & ~PTE_SYSCALL)) {
+		cprintf("[%08x] bad perm %x in sys_ipc_try_send\n", 
+			curenv->env_id, perm);
+		return -E_INVAL;
+	}
 		
 	e->env_ipc_perm = perm;
+ipc_end:
 	e->env_ipc_recving = 0;
 	e->env_ipc_from = curenv->env_id;
 	e->env_ipc_value = value;
@@ -505,11 +505,7 @@ sys_ept_map(envid_t srcenvid, void *srcva,
 	if ((r = envid2env(srcenvid, &es, 1)) < 0
             || (r = envid2env(guest, &ed, 1)) < 0)
 		return r;
-	if ((~perm & (PTE_U|PTE_P)) || (perm & ~PTE_SYSCALL))
-		return -E_INVAL;
 	if ((pp = page_lookup(es->env_pml4e, srcva, &ppte)) == 0)
-		return -E_INVAL;
-	if ((perm & PTE_W) && !(*ppte & PTE_W))
 		return -E_INVAL;
 	if ((r = ept_page_insert(ed->env_pml4e, pp, guest_pa, perm)) < 0)
 		return r;

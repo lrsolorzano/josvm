@@ -64,7 +64,6 @@ bool vmx_check_support() {
 	//If VMX is enabled, bit 5 in ecx will be set to 1.
 	if (BIT(ecx, 5) != 1){
 		
-		
 		cprintf("[VMM] VMX extension not supported.\n");
 		return false;
 	}
@@ -101,9 +100,6 @@ bool vmx_check_ept() {
 		}
 		
 	}
-
-			
-	
 	
 	cprintf("[VMM] EPT extension not supported.\n");
 	return false;

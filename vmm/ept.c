@@ -64,12 +64,10 @@ int ept_lookup_gpa(epte_t* eptrt, void *gpa,
 	// bits 11-3 come from 47-39 of the gpa
 	// bits 0, 1, and 2 are read, write, and execute permissions respectively.
 
-	epte_t * ept_pml4e = 0;
+	epte_t *ept_pml4e;
 	//Set bits 51-12.  Bits 63-52 should be zero'd in eptrt but we can double check that later if necessary.
-	ept_pml4e = (epte_t *) (epte_addr( (epte_t)eptrt));
 	//Set bits 11-3 with 47-39 of the gpa
-	ept_pml4e = (epte_t *)  ((uint64_t) ept_pml4e |( (ADDR_TO_IDX(gpa,3)) >>3 ));
-	
+	ept_pml4e = eptrt + (int)ADDR_TO_IDX(gpa,3);
 	//Check  address to see if pointer to next level exists 
 
 	if (!epte_present(*ept_pml4e)) {
@@ -81,16 +79,12 @@ int ept_lookup_gpa(epte_t* eptrt, void *gpa,
 		}
 		else {
 			//Allocate a new page zero'd out.
-			struct PageInfo * newPage = page_alloc(ALLOC_ZERO);
-			//Insert the page with a mapping for the kernel.  Should just need present and write permissions.
-			int res = page_insert(boot_pml4e, newPage,KADDR(page2pa(newPage)) , (PTE_P & PTE_W));
-			if (res != 0)
-				return -E_NO_MEM;
+			struct PageInfo *newPage = page_alloc(ALLOC_ZERO);
+			newPage->pp_ref++;
+			
 			//Set the pointer to the next level (PDPTEs) to be the physical address alloc'd, and set __EPTE_FULL perms.
-			*ept_pml4e = page2pa(newPage) & __EPTE_FULL;
+			*ept_pml4e = page2pa(newPage) | __EPTE_FULL;
 		}
-		
-		
 	}
 
 	//By this point, *ept_pml4e should be populated with a valid pointer to the PDPT entries.
@@ -102,9 +96,9 @@ int ept_lookup_gpa(epte_t* eptrt, void *gpa,
 	//Find the correct entry in the PDPT table
 
 	//Set bits 51-12 from 51-12 of the pml4 entry
-	epte_t * ept_pdpte = (epte_t *) epte_addr((epte_t) *ept_pml4e);
+	epte_t *ept_pdpte = KADDR(epte_addr((epte_t)*ept_pml4e));
 	//set bits 11-3 from 38-30 of the gpa
-	ept_pdpte = (epte_t *)  ((uint64_t) ept_pdpte | (ADDR_TO_IDX(gpa,2) >>3));
+	ept_pdpte = ept_pdpte + (int)ADDR_TO_IDX(gpa,2);
 
 	//Check address to see if pointer to next level exists.
 
@@ -112,21 +106,15 @@ int ept_lookup_gpa(epte_t* eptrt, void *gpa,
 
 		//If create == 0, return -E_NO_ENT.
 		//Otherwise, go ahead and create the next level of the ept page table.
-		if ( create ==0 ) {
+		if ( create == 0 ) {
 			return -E_NO_ENT;
 		}
 		else {
-
 			//Allocate a new page zero'd out.
-			struct PageInfo * newPage = page_alloc(ALLOC_ZERO);
-			//Insert the page with a mapping for the kernel.  Should just need present and write permissions.
-			int res = page_insert(boot_pml4e, newPage,KADDR(page2pa(newPage)) , (PTE_P & PTE_W));
-			if (res != 0)
-				return -E_NO_MEM;
-			*ept_pdpte = (page2pa(newPage)) & __EPTE_FULL;
-			
+			struct PageInfo *newPage = page_alloc(ALLOC_ZERO);
+			newPage->pp_ref++;
+			*ept_pdpte = page2pa(newPage) | __EPTE_FULL;
 		}
-			
 	}
 
 	//By this point, *ept_pdpte should be populated with a valid physical addr ptr to the PDE table
@@ -138,9 +126,9 @@ int ept_lookup_gpa(epte_t* eptrt, void *gpa,
 	//Find the correct entry in the PDE table
 
 	//Set bits 51-12 from 51-12 of the pdpte
-	epte_t * ept_pde = (epte_t *) epte_addr( (epte_t)*ept_pdpte);
+	epte_t *ept_pde = KADDR(epte_addr((epte_t)*ept_pdpte));
 	//set bits 11-3 from 29-21 of the gpa
-	ept_pde = (epte_t *)  ((uint64_t)ept_pde | (ADDR_TO_IDX(gpa,1) >>3));
+	ept_pde = ept_pde + (int)ADDR_TO_IDX(gpa,1);
 
 	if (!epte_present(*ept_pde)) {
 
@@ -153,14 +141,9 @@ int ept_lookup_gpa(epte_t* eptrt, void *gpa,
 
 			//Allocate a new page zero'd out.
 			struct PageInfo * newPage = page_alloc(ALLOC_ZERO);
-			//Insert the page with a mapping for the kernel.  Should just need present and write permissions.
-			int res = page_insert(boot_pml4e, newPage,KADDR(page2pa(newPage)) , (PTE_P & PTE_W));
-			if (res != 0)
-				return -E_NO_MEM;
-			*ept_pde = (page2pa(newPage)) & __EPTE_FULL;
+			newPage->pp_ref++;
+			*ept_pde = page2pa(newPage) | __EPTE_FULL;
 		}
-		
-		
 	}
 
 	//By this point, *ept_pde should now be populated with a valid physical addr ptr to a page table.
@@ -173,9 +156,9 @@ int ept_lookup_gpa(epte_t* eptrt, void *gpa,
 	//Find the correct entry in the Page Table
 
 	//Set bits 51-12 from 51-12 of the pde
-	epte_t * ept_pt = (epte_t *) epte_addr((epte_t)*ept_pde);
+	epte_t *ept_pt = KADDR(epte_addr((epte_t)*ept_pde));
 	//Set bits 11-3 from 20-12 of the gpa
-	ept_pt = (epte_t *)( (uint64_t)ept_pt | (ADDR_TO_IDX(gpa,0) >>3));
+	ept_pt = ept_pt + (int)ADDR_TO_IDX(gpa,0);
 
 	//Should not need to create the page if ept_pt isn't present.
 	/*
@@ -201,12 +184,8 @@ int ept_lookup_gpa(epte_t* eptrt, void *gpa,
 
 	*epte_out = ept_pt;
 
-	
-	
-
 //panic("ept_lookup_gpa not implemented\n");
 	return 0;
-	
 }
 
 void ept_gpa2hva(epte_t* eptrt, void *gpa, void **hva) {
@@ -301,21 +280,29 @@ int ept_page_insert(epte_t* eptrt, struct PageInfo* pp, void* gpa, int perm) {
 //       You should set the type to EPTE_TYPE_WB and set __EPTE_IPAT flag.
 int ept_map_hva2gpa(epte_t* eptrt, void* hva, void* gpa, int perm, 
         int overwrite) {
-
-	epte_t * pt = NULL;
-	epte_t** pt_ptr = &pt;
+	epte_t *pt;
+	int r;
 	
-	int res = ept_lookup_gpa(eptrt, gpa,overwrite,pt_ptr );
+	r = ept_lookup_gpa(eptrt, gpa, 1, &pt);
+	if (r < 0)
+		panic("page lookup failed!\n");
 
-	if (res ==0)
-		pt = (epte_t *)  PADDR(hva);
-	pt = (uint64_t *) ((uint64_t) pt | perm | __EPTE_IPAT | __EPTE_TYPE(EPTE_TYPE_WB));
+	if (epte_present(*pt) && !overwrite)
+		return -E_INVAL;
+	
+	if (epte_present(*pt)) {
+		page_decref(pa2page(epte_addr(*pt)));
+		tlbflush();
+	}
+		
+	pt = (epte_t *)PADDR(hva);
+	pt = (epte_t *)((uint64_t) pt | perm | __EPTE_IPAT | __EPTE_TYPE(EPTE_TYPE_WB));
 
 	
     /* Your code here */
     //panic("ept_map_hva2gpa not implemented\n");
 
-	return res;
+	return 0;
 }
 
 int ept_alloc_static(epte_t *eptrt, struct VmxGuestInfo *ginfo) {
@@ -351,6 +338,7 @@ int test_ept_map(void)
 	int i;
 	epte_t* dir;
 	/* Initialize source env */
+	cprintf("here!\n");
 	if ((r = env_alloc(&srcenv, 0)) < 0)
 		panic("Failed to allocate env (%d)\n", r);
 	if (!(pp = page_alloc(ALLOC_ZERO)))
@@ -372,6 +360,7 @@ int test_ept_map(void)
 	if ((r = env_guest_alloc(&dstenv, srcenv->env_id)) < 0)
 		panic("Failed to allocate guest env (%d)\n", r);
 	dstenv->env_vmxinfo.phys_sz = (uint64_t)UTEMP + PGSIZE;
+	cprintf("here 3!\n");
 	
 	/* Check if sys_ept_map can verify srcva correctly */
 	if ((r = _export_sys_ept_map(srcenv->env_id, (void *)UTOP, dstenv->env_id, UTEMP, __EPTE_READ)) < 0)
